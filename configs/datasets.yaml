@@ -1,0 +1,19 @@
+
+imagenet:
+  train: train
+  val:
+    - val
+  test:
+    - v2
+    - sketch
+    - imagenet-a
+    - imagenet-r
+caltech-101: default-setup
+dtd: default-setup
+eurosat: default-setup
+food-101: default-setup
+oxford_flowers: default-setup
+oxford_pets: default-setup
+standford_cars: default-setup
+ucf101: default-setup
+fgvc_aircraft: default-setup
