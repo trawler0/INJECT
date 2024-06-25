@@ -14,7 +14,7 @@ List all libraries and tools required to run the code. For example:
 - PyTorch 1.11
 - NumPy 1.22
 
-## Preliminary Results
+## Preliminary Results (16-shot)
 <table>
   <tr>
     <th>Method</th>
@@ -90,7 +90,7 @@ List all libraries and tools required to run the code. For example:
     <td>not computed yet</td>
     <td>43.3</td>
     <td>40.0</td>
-    <td>18.3</td>
+    <td>not computed yet</td>
     <td>86.5</td>
     <td>78.2</td>
   </tr>
@@ -103,7 +103,7 @@ List all libraries and tools required to run the code. For example:
     <td>not computed yet</td>
     <td>66.2</td>
     <td>81.8</td>
-    <td>37.8</td>
+    <td>not computed yet</td>
     <td>90.1</td>
     <td>79.6</td>
   </tr>
@@ -116,7 +116,7 @@ List all libraries and tools required to run the code. For example:
     <td>not computed yet</td>
     <td>66.2</td>
     <td>81.2</td>
-    <td>35.1</td>
+    <td>not computed yet</td>
     <td>89.3</td>
     <td>78.4</td>
   </tr>
