@@ -9,6 +9,7 @@ import numpy as np
 from typing import *
 import math
 from templates import IMAGENET_A_IDX, IMAGENET_R_IDX
+import clip
 
 DEFAULT_LR = 1e-3
 DEFAULT_EMA_DECAY = 0.997
@@ -255,73 +256,6 @@ class INJECT(LightningModule):
                 "interval": "step",
             },
         }
-
-
-# like in Tip adapter paper
-class TipAdapter(LightningModule):
-
-    def __init__(
-            self,
-            model: INJECT,
-            tau: float,
-            beta: float
-    ):
-        super().__init__()
-        self.model = model
-        self.tau = tau
-        self.cache_features = None  # N x D
-        self.cache_labels = None  # N x N_class
-        self.beta = beta
-
-    def forward(self, image_features):
-        if len(image_features.shape) == 4:
-            image_features = self.model.backbone(image_features)
-        logits = self.model.forward_inject(image_features)
-        if self.cache_features is not None:
-            image_features = image_features.to(torch.float)
-            image_features = self.model.se(image_features)
-            image_features = F.normalize(image_features, p=2, dim=-1)  # B x D
-            sims = torch.exp(-(1 - image_features @ self.cache_features.T) / self.tau)  # B x N
-            cache_logits = sims @ self.cache_labels  # B x N_class
-            logits = logits + self.beta * cache_logits
-        return logits
-
-    def training_step(self, batch, batch_idx):
-
-        image, target = batch
-        with torch.no_grad():
-            self.model.backbone.eval()
-            image_features = self.model.backbone(image)
-            image_features = self.model.se(image_features)
-            image_features = F.normalize(image_features, p=2, dim=-1)  # B x D
-            if self.cache_features is None:
-                self.cache_features = image_features
-                self.cache_labels = F.one_hot(target, self.model.text_features.shape[0]).float()
-            else:
-                self.cache_features = torch.cat([self.cache_features, image_features], dim=0)
-                self.cache_labels = torch.cat([self.cache_labels, F.one_hot(target, self.model.text_features.shape[0]).float()], dim=0)
-
-    def validation_step(self, batch, batch_idx, dataloader_idx=0):
-        image, target = batch
-        logits = self(image)
-        flag = "val" if self.model.test_flags is None else self.model.test_flags[dataloader_idx]
-        if flag == "imagenet-a":
-            logits = logits[:, IMAGENET_A_IDX]
-        if flag == "imagenet-r":
-            logits = logits[:, IMAGENET_R_IDX]
-
-        acc = (logits.argmax(1) == target).float().mean()
-        self.log("{}_acc".format(flag), acc, on_epoch=True, prog_bar=True, on_step=False)
-        return acc
-
-    def configure_optimizers(self) -> OptimizerLRScheduler:
-        return torch.optim.AdamW(self.model.parameters(), lr=self.model.lr)
-
-
-
-
-
-
 
 
 

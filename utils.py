@@ -29,3 +29,22 @@ def log_metrics(results, test_flags):
     for i, result in enumerate(results):
         for key, value in result.items():
             mlflow.log_metric(f"{test_flags[i]}_{key}", value)
+
+
+class DistillDataset(torch.utils.data.Dataset):
+    def __init__(self, ds, augmentation, preprocess_student, preprocess_teacher):
+        self.ds = ds
+        self.augmentation = augmentation
+        self.preprocess_student = preprocess_student
+        self.preprocess_teacher = preprocess_teacher
+
+    def __len__(self):
+        return len(self.ds)
+
+    def __getitem__(self, idx):
+        x, _ = self.ds[idx]
+        x = self.augmentation(x)
+        x_student = self.preprocess_student(x)
+        x_teacher = self.preprocess_teacher(x)
+
+        return x_student, x_teacher

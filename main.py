@@ -32,6 +32,7 @@ def main():
     parser.add_argument("--test-ema", action="store_true", default=False)
     parser.add_argument("--weighing-strategy", type=str, default="linear")
     parser.add_argument("--save_weights", action="store_true", default=False)
+    parser.add_argument("--epoch-multiplier", type=float, default=1.)
 
     args = parser.parse_args()
 
@@ -90,7 +91,7 @@ def main():
 
 
         print("Starting training on", args.dataset_identifier)
-        trainer = Trainer(max_epochs=args.epochs, precision=32, enable_checkpointing=False, logger=False)
+        trainer = Trainer(max_epochs=int(args.epochs * args.epoch_multiplier), precision=32, enable_checkpointing=False, logger=False)
         trainer.fit(model, train_loader, val_loader)
         if args.test_ema:
             model = model.ema
