@@ -31,6 +31,7 @@ def main():
     parser.add_argument("--use-cached-data", default="True", type=str)
     parser.add_argument("--test-ema", action="store_true", default=False)
     parser.add_argument("--weighing-strategy", type=str, default="linear")
+    parser.add_argument("--save_weights", action="store_true", default=False)
 
     args = parser.parse_args()
 
@@ -89,13 +90,15 @@ def main():
 
 
         print("Starting training on", args.dataset_identifier)
-        trainer = Trainer(max_epochs=args.epochs, precision=32, enable_checkpointing=False, logger=None)
+        trainer = Trainer(max_epochs=args.epochs, precision=32, enable_checkpointing=False, logger=False)
         trainer.fit(model, train_loader, val_loader)
         if args.test_ema:
             model = model.ema
         results = trainer.validate(model, test_dataloaders)
 
         log_metrics(results, test_flags)
+        if args.save_weights:
+            mlflow.pytorch.log_model(model, "models")
 
 
 if __name__ == "__main__":

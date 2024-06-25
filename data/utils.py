@@ -182,6 +182,7 @@ class DatasetFolder(VisionDataset):
         self.classes = classes
         self.class_to_idx = class_to_idx
         self.idx_to_class = {v: k.replace("_", " ") for k, v in class_to_idx.items()}
+        self.idx_to_class = {i: self.idx_to_class[i] for i in range(len(self.class_to_idx))}
         self.samples = samples
         self.targets = [s[1] for s in samples]
 
