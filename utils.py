@@ -32,19 +32,14 @@ def log_metrics(results, test_flags):
 
 
 class DistillDataset(torch.utils.data.Dataset):
-    def __init__(self, ds, augmentation, preprocess_student, preprocess_teacher):
-        self.ds = ds
-        self.augmentation = augmentation
-        self.preprocess_student = preprocess_student
-        self.preprocess_teacher = preprocess_teacher
+
+    def __init__(self, embeddings_student, embeddings_teacher):
+        self.embeddings_student = embeddings_student
+        self.embeddings_teacher = embeddings_teacher
+
 
     def __len__(self):
-        return len(self.ds)
+        return len(self.embeddings_student)
 
     def __getitem__(self, idx):
-        x, _ = self.ds[idx]
-        x = self.augmentation(x)
-        x_student = self.preprocess_student(x)
-        x_teacher = self.preprocess_teacher(x)
-
-        return x_student, x_teacher
+        return self.embeddings_student[idx], self.embeddings_teacher[idx]

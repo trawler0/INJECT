@@ -9,15 +9,15 @@ import numpy as np
 from typing import *
 import math
 from templates import IMAGENET_A_IDX, IMAGENET_R_IDX
-import clip
+import random
 
 DEFAULT_LR = 1e-3
 DEFAULT_EMA_DECAY = 0.997
 DEFAULT_SQUEEZE_RATIO = 0.25
 DEFAULT_ALPHA = 1.0
-DEFAULT_LABEL_SMOOTHING = 0.0
-DEFAULT_WEIGHING_STRATEGY = "linear"
+DEFAULT_LABEL_SMOOTHING = 0.05
 DEFAULT_LOGIT_SCALE = 10.
+DEFAULT_T = 10.  # this ends up in the identity function
 
 __all__ = ["INJECT"]
 
@@ -99,21 +99,13 @@ class INJECT(LightningModule):
             self,
             backbone: nn.Module,
             text_features: Union[np.ndarray, torch.Tensor],
-            weighing_strategy: str = DEFAULT_WEIGHING_STRATEGY,
-            label_smoothing: float =DEFAULT_LABEL_SMOOTHING,
+            label_smoothing: float = DEFAULT_LABEL_SMOOTHING,
             lr: float = DEFAULT_LR,
             ema_decay: float = DEFAULT_EMA_DECAY,
             logit_scale: float = DEFAULT_LOGIT_SCALE,
-            test_flags: List[str] = None
+            test_flags: List[str] = None,
+            T: float = DEFAULT_T
     ):
-        """
-        INJECT model, minimal CLIP domain adaption model
-
-        :param cache_features: prompt templates/feature used for KNN
-        :param label_smoothing: label smoothing
-        :param lr: learning rate for AdamW
-        :param ema_decay: exponential moving average decay
-        """
         super().__init__()
         self.backbone = backbone
         text_features = torch.tensor(text_features).float()
@@ -127,40 +119,30 @@ class INJECT(LightningModule):
         self.label_smoothing = label_smoothing
         self.lr = lr
 
-        self.weighing_strategy = weighing_strategy
-        # the ones listed here work well, but others might work too, the popular (in SSL) rule exp(sim / T) does not work
-        # nonlinear strategy might be more powerful if the cache is large
-        if weighing_strategy == "logistic":
-            self.delta_prime = torch.nn.Parameter(torch.zeros(1))
-            self.b = torch.nn.Parameter(torch.zeros(1))
-        elif weighing_strategy == "linear":
-            pass
-        else:
-            raise ValueError("Weighing strategy {} not supported".format(weighing_strategy))
-
         self.logit_scale = nn.Parameter(torch.tensor(math.log(logit_scale)))
         self.test_flags = test_flags
 
         self.ema = deepcopy(self)
         self.ema_decay = ema_decay
+        self.T = T
 
     def _weighing(self, sims):
-        if self.weighing_strategy == "logistic":
-            delta = torch.exp(self.delta_prime) + 1
-            sims = 2 / (1 + torch.exp(-delta * sims + self.b))
-            self.log("delta", delta, on_step=False, on_epoch=True, prog_bar=True)
-            self.log("b", self.b, on_step=False, on_epoch=True, prog_bar=True)
-        elif self.weighing_strategy == "linear":
-            pass
-        return sims
+        if self.training:
+            return sims
+        else:
+            return self.T * (torch.exp(sims / self.T) - 1)  # renormalization
 
-    def forward_inject(self, image_features):
-        image_features = image_features.float()
-        image_features = self.se(image_features)
-        image_features = F.normalize(image_features, p=2, dim=-1)  # B x D
-
+    def forward_inject(self, image_features, ratio=1.):
         weights = self.text_features  # N_class x L x D
         weights = F.normalize(weights, p=2, dim=-1)
+
+        image_features = image_features.float()
+        image_features = F.normalize(image_features, p=2, dim=-1)  # B x D
+
+        original_logits = image_features @ weights.mean(1).T
+
+        image_features = self.se(image_features)
+        image_features = F.normalize(image_features, p=2, dim=-1)  # B x D
 
         sims = weights @ image_features.T  # N_class x L x B
         sims = sims.permute(2, 0, 1)  # B x N_class x L
@@ -171,14 +153,16 @@ class INJECT(LightningModule):
         sims = sims * t  # B x N_class x L
 
         logit_scale = torch.exp(self.logit_scale)
-        logits = sims.sum(dim=-1) * logit_scale  # B x N_class
+        logits = sims.sum(dim=-1)   # B x N_class
+
+        logits = (ratio * logits + (1 - ratio) * original_logits) * logit_scale
 
         return logits
 
 
-    def forward(self, image):
+    def forward(self, image, ratio=.9):
         image_features = self.backbone(image)
-        return self.forward_inject(image_features)
+        return self.forward_inject(image_features, ratio=ratio)
 
     def training_step(self, batch, batch_idx):
         sleep(0.005)  # if using encoded features, need this to prevent computer from freezing
@@ -219,20 +203,16 @@ class INJECT(LightningModule):
             image_features = self.backbone(image)
         else:
             image_features = image
-        current_alpha = self.se.alpha.data  # to set back
-
-        for alpha in [0, .1, .2, .3, .4, .5, .6, .7, .8, .9, 1.]:
+        for ratio in [0, .2, .4, .6, .8, .9, .95, 1.]:
             flag = "val" if self.test_flags is None else self.test_flags[dataloader_idx]
-            self.se.alpha.data = torch.tensor(alpha)
-            logits = self.forward_inject(image_features)
+            logits = self.forward_inject(image_features, ratio=ratio)
             if flag == "imagenet-a":
                 logits = logits[:, IMAGENET_A_IDX]
             if flag == "imagenet-r":
                 logits = logits[:, IMAGENET_R_IDX]
             acc = (logits.argmax(1) == target).float().mean()
-            self.log("{}_acc_{}".format(flag, alpha), acc, on_epoch=True, prog_bar=True, on_step=False)
+            self.log("{}_acc_{}".format(flag, ratio), acc, on_epoch=True, prog_bar=True, on_step=False)
 
-        self.se.alpha.data = current_alpha
         return acc
 
     def configure_optimizers(self):
@@ -241,11 +221,6 @@ class INJECT(LightningModule):
             {"params": self.alpha, "lr": self.lr * 10},
             {"params": self.logit_scale, "lr": self.lr * 10}
         ]
-        if self.weighing_strategy == "logistic":
-            params.extend([
-                {"params": self.delta_prime, "lr": 5 * self.lr},
-                {"params": self.b, "lr": 5 * self.lr}
-            ])
         optimizer = torch.optim.AdamW(params, lr=self.lr)
         total_steps = self.trainer.estimated_stepping_batches
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, total_steps)
@@ -256,10 +231,6 @@ class INJECT(LightningModule):
                 "interval": "step",
             },
         }
-
-
-
-
 
 
 

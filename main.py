@@ -9,6 +9,8 @@ import numpy as np
 from data import DATASETS
 import torch
 from torchvision import transforms as T
+from pytorch_lightning.callbacks import ModelCheckpoint
+import tempfile
 
 def main():
     parser = argparse.ArgumentParser()
@@ -30,9 +32,9 @@ def main():
     parser.add_argument("--root", default=default_root, type=str)
     parser.add_argument("--use-cached-data", default="True", type=str)
     parser.add_argument("--test-ema", action="store_true", default=False)
-    parser.add_argument("--weighing-strategy", type=str, default="linear")
     parser.add_argument("--save_weights", action="store_true", default=False)
     parser.add_argument("--epoch-multiplier", type=float, default=1.)
+    parser.add_argument("--return-best", action="store_true", default=False)
 
     args = parser.parse_args()
 
@@ -87,12 +89,26 @@ def main():
 
 
         backbone = CLIPBackbone(args.clip_model)
-        model = INJECT(backbone, prompts, test_flags=test_flags, weighing_strategy=args.weighing_strategy)
+        model = INJECT(backbone=backbone,text_features=prompts, test_flags=test_flags)
 
 
         print("Starting training on", args.dataset_identifier)
-        trainer = Trainer(max_epochs=int(args.epochs * args.epoch_multiplier), precision=32, enable_checkpointing=False, logger=False)
+        if args.return_best:
+            checkpoint_callback = ModelCheckpoint(filename=os.path.join(tempfile.gettempdir(), "best.ckpt"), monitor="val_acc_0.9", mode="max")
+            callbacks = [checkpoint_callback]
+            enable_checkpointing = True
+        else:
+            callbacks = None
+            enable_checkpointing = False
+        trainer = Trainer(max_epochs=int(args.epochs * args.epoch_multiplier), precision=32, enable_checkpointing=enable_checkpointing, logger=False, callbacks=callbacks)
         trainer.fit(model, train_loader, val_loader)
+
+        if args.return_best:
+            model = INJECT.load_from_checkpoint(checkpoint_callback.best_model_path, backbone=backbone, text_features=prompts, test_flags=test_flags)
+        # delete best model, no need to save for benchmarking
+        if args.return_best and os.path.exists(checkpoint_callback.best_model_path):
+            os.remove(checkpoint_callback.best_model_path)
+
         if args.test_ema:
             model = model.ema
         results = trainer.validate(model, test_dataloaders)

@@ -78,47 +78,21 @@ List all libraries and tools required to run the code. For example:
     <td>65.5</td>
     <td>83.0</td>
     <td>38.0</td>
-    <td>91.3</td>
+    <td>89.5</td>
     <td>78.1</td>
   </tr>
   <tr>
-    <td>INJECT (only learnable prompt Interpolation)
-    <td>56.25</td>
-    <td>63.5</td>
-    <td>88.9</td>
-    <td>69.3</td>
+    <td>INJECT (No Cache)
+    <td>73.0</td>
+    <td>78.64</td>
+    <td>93.6</td>
+    <td>95.7</td>
     <td>not computed yet</td>
-    <td>43.3</td>
-    <td>40.0</td>
-    <td>not computed yet</td>
-    <td>86.5</td>
-    <td>78.2</td>
-  </tr>
-  <tr>
-    <td>INJECT (Best Score)
-    <td>72.9</td>
-    <td>78.9</td>
-    <td>93.3</td>
-    <td>94.2</td>
-    <td>not computed yet</td>
-    <td>66.2</td>
-    <td>81.8</td>
-    <td>not computed yet</td>
-    <td>90.1</td>
+    <td>66.3</td>
+    <td>83.8</td>
+    <td>35.7</td>
+    <td>90.4</td>
     <td>79.6</td>
-  </tr>
-  <tr>
-    <td>INJECT (Default value alpha=.9, no hyperparameter tuning)
-    <td>71.9</td>
-    <td>78.9</td>
-    <td>93.1</td>
-    <td>93.21</td>
-    <td>not computed yet</td>
-    <td>66.2</td>
-    <td>81.2</td>
-    <td>not computed yet</td>
-    <td>89.3</td>
-    <td>78.4</td>
   </tr>
 </table>
 The exact results have to be requested from the authors.

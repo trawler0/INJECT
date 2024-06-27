@@ -197,8 +197,19 @@ class FGVC(DatasetFolder):
                 path = os.path.join(directory, self.image_dir, im + ".jpg")
                 item = (path, label)
                 samples.append(item)
-
-        return samples
+        current_class = samples[0][1]
+        actual_samples = []
+        n = 0
+        for sample in samples:
+            if current_class != sample[1]:
+                current_class = sample[1]
+                n = 0
+            if n == n_shot:
+                continue
+            else:
+                n += 1
+                actual_samples.append(sample)
+        return actual_samples
 
 IMAGENET_CLASSES = ["tench", "goldfish", "great white shark", "tiger shark", "hammerhead shark", "electric ray",
                         "stingray", "rooster", "hen", "ostrich", "brambling", "goldfinch", "house finch", "junco",
