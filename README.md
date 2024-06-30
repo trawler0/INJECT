@@ -1,4 +1,4 @@
-# Inject
+# An injection-based approach to few-shot domain adaptation of foundation models
 
 ## Abstract
 A CLIP-adapter model for few-shot domain adaptation. The method is in the same spirit as CLIP-adapter https://arxiv.org/pdf/2110.04544.
