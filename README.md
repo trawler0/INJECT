@@ -1,7 +1,13 @@
 # Inject
 
 ## Abstract
-A CLIP-adapter model for few-shot domain adaptation.
+A CLIP-adapter model for few-shot domain adaptation. The method is in the same spirit as CLIP-adapter https://arxiv.org/pdf/2110.04544.
+This project has been open-sourced for showcasing, but is not finished yet.
+It builds upon
+- CLIP: https://arxiv.org/abs/2103.00020
+- CLIP-adapter: https://arxiv.org/pdf/2110.04544
+- Prototypical Networks: https://arxiv.org/abs/1703.05175
+- DINOv2: https://arxiv.org/abs/2304.07193
 
 ## Introduction
 We introduce learnable proto-prompts which are learnable convex-combinations of the embeddings for a given set of prompts.

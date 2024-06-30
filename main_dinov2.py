@@ -1,4 +1,3 @@
-import clip
 from inject import INJECT, INJECTEnsemble
 from utils import Backbone, CachedDataset, log_metrics, DEFAULT_TRANSFORMS
 from pytorch_lightning import Trainer
@@ -9,8 +8,6 @@ import numpy as np
 from data import DATASETS
 import torch
 from torchvision import transforms as T
-from pytorch_lightning.callbacks import ModelCheckpoint
-import tempfile
 
 def main():
     parser = argparse.ArgumentParser()
@@ -80,6 +77,8 @@ def main():
         p1, p2 = prompts["emb1"], prompts["emb2"]
         ds1 = DATASETS.get(args.dataset_identifier)(args.root, "train", n_shot=args.n_shot, start_shot=args.n_shot//2, transform=train_transforms)
         ds2 = DATASETS.get(args.dataset_identifier)(args.root, "train", n_shot=args.n_shot//2, start_shot=0, transform=train_transforms)
+
+        # need to use leave use 50% as prompts and 50% as training samples, switching roles and ensembling improves performance
 
         print("Training model 1")
         model1 = INJECT(backbone=backbone, text_features=p1, test_flags=test_flags)

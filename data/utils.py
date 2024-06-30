@@ -2,11 +2,9 @@ import os
 import os.path
 from pathlib import Path
 from typing import Any, Callable, cast, Dict, List, Optional, Tuple, Union
-
 import random
 from PIL import Image
 import json
-
 from torchvision.datasets import VisionDataset
 
 """
@@ -529,13 +527,6 @@ class Registry:
 
     def __str__(self):
         return str(self._registry)
-
-if __name__ == "__main__":
-    ds = FewShotDataset("/home/marco/data/imagenet/train", n_shot=5)
-    print(ds[10])
-    ds.save_ids("imagenet_5_shot.json")
-    ds = LoadFewShotDataset("/home/marco/data/imagenet/train", "imagenet_5_shot.json")
-    print(ds[10])
 
 
 

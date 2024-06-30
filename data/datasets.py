@@ -406,5 +406,4 @@ def get_imagenet(root, split, **kwargs):
         if split in ["imagenet-a", "imagenet-r"]:
             idx = [im_val.class_to_idx[c] for c, i in ds.class_to_idx.items()]
             ds.idx_to_class = {i: IMAGENET_CLASSES[idx[i]] for i in range(len(idx))}
-            print(idx)
         return ds
