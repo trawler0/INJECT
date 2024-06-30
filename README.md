@@ -9,6 +9,7 @@ It builds upon
 - Prototypical Networks: https://arxiv.org/abs/1703.05175
 - DINOv2: https://arxiv.org/abs/2304.07193
 - squeeze-excitation: https://arxiv.org/abs/1709.01507
+- COOP: https://arxiv.org/abs/2109.01134 (also used the data splits from their repository)
 
 The goal is a unified approach for few-shot domain adaptation of foundation models that is agnostic to the prompt domain.
 CLIP can naturally use text as prompts and DINO-models can use images as prompts.
