@@ -8,11 +8,15 @@ It builds upon
 - CLIP-adapter: https://arxiv.org/pdf/2110.04544
 - Prototypical Networks: https://arxiv.org/abs/1703.05175
 - DINOv2: https://arxiv.org/abs/2304.07193
+- squeeze-excitation: https://arxiv.org/abs/1709.01507
+
+The goal is a unified approach for few-shot domain adaptation of foundation models that is agnostic to the prompt domain.
+CLIP can naturally use text as prompts and DINO-models can use images as prompts.
 
 ## Introduction
 We introduce learnable proto-prompts which are learnable convex-combinations of the embeddings for a given set of prompts.
 Furthermore, we introduce the ROSE-layer. It first rotates the spherical embeddings of CLIP, then applies squeeze-excitation and finally rotates back to the original space.
-This method performs well on all common benchmark datasets with its default hyperparameters and does not tend to overfit and does not rely on a cache.
+Although the method is very simple and robust in its hyperparameters, it works surprisingly well.
 
 ## Preliminary Results (16-shot)
 Resnet50 is used as the CLIP backbone and vit-s as the vision transformer for dinov2.

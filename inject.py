@@ -30,16 +30,15 @@ class OrthogonalLinear(nn.Module):
         """
         super(OrthogonalLinear, self).__init__()
         self.features = features
-        # initialize zero which exponentiates to identity
-        self.skew_symmetric = nn.Parameter(torch.rand(features, features))
+        self.param = nn.Parameter(torch.rand(features, features))
 
     def forward(self, input: torch.Tensor, inverse: bool = False):
         # Ensure skew-symmetry during the forward pass, this is a slight over-parameterization
-        A = self.skew_symmetric - self.skew_symmetric.T
+        A = self.param - self.param.T
         # when using inverse, harness that exp(-A) = exp(A)^-1
         if inverse:
             A = -A
-        weight_orthogonal = torch.matrix_exp(A)
+        weight_orthogonal = torch.matrix_exp(A)  # this is not an entry-wise exponential, google matrix exponential as reference
         return F.linear(input, weight_orthogonal)
 
 
@@ -58,6 +57,8 @@ class Rose(nn.Module):
         :param features: dimension of the input features
         :param alpha: interpolation parameter between identity and the learned rotation
         :param squeeze_ratio: ratio of the squeeze excitation MLP hidden layer size to the input size
+        :param apply_se: whether to apply squeeze excitation (will act as identity if False)
+        :param apply_rotation: whether to apply the rotation (will act as squeeze-excitation if False)
         """
         super(Rose, self).__init__()
         self.ol = OrthogonalLinear(features)
@@ -106,6 +107,17 @@ class INJECT(LightningModule):
             test_flags: List[str] = None,
             T: float = DEFAULT_T
     ):
+        """
+        INJECT model, injects new knowledge into the baseline heuristic of comparing inputs with prompts
+        :param backbone: a CLIP or DINOv2 model
+        :param text_features: precomputed embeddings of the prompts N_class x L x D (L is the number of prompts for each class)
+        :param label_smoothing: label smoothing during training
+        :param lr: learning rate
+        :param ema_decay: exponential moving average decay, can improve robustness
+        :param logit_scale: the learnable logit scale initialization
+        :param test_flags: used if imagenet is the dataset, to evaluate on imagenet-a and imagenet-r
+        :param T: a rescaling parameter for experimental purposes, does not seem to be useful
+        """
         super().__init__()
         self.backbone = backbone
         text_features = torch.tensor(text_features).float()
@@ -232,7 +244,8 @@ class INJECT(LightningModule):
             },
         }
 
-
+# for DINOv2 models we need data samples as prompts, so splitting 50/50 into prompts and training samples is natural.
+# Peroformance is improved by switching roles of the two models and ensembling them.
 
 class INJECTEnsemble(LightningModule):
 
