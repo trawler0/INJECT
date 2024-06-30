@@ -13,7 +13,7 @@ __all__ = [
 ]
 
 DEFAULT_IMAGE_SIZE = 224
-# these have proven to work well for training
+# these have proven to work well for training, augmentations are very important for these purposes
 DEFAULT_TRANSFORMS = T.Compose([
             T.RandomResizedCrop(224, scale=(0.2, 1.0)),
             T.RandomHorizontalFlip(),
