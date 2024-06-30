@@ -146,7 +146,8 @@ class FGVC(DatasetFolder):
             is_valid_file: Optional[Callable[[str], bool]] = None,
             allow_empty: bool = False,
             seed: int = -1,
-            n_shot: int = -1
+            n_shot: int = -1,
+            start_shot: int = 0
     ):
         n_shot = n_shot if split == "train" else -1
         self.image_dir = image_dir
@@ -160,7 +161,8 @@ class FGVC(DatasetFolder):
             is_valid_file=is_valid_file,
             allow_empty=allow_empty,
             seed=seed,
-            n_shot=n_shot
+            n_shot=n_shot,
+            start_shot=start_shot
         )
 
     def find_classes(self, directory: str):
@@ -183,7 +185,8 @@ class FGVC(DatasetFolder):
         is_valid_file: Optional[Callable[[str], bool]] = None,
         allow_empty: bool = False,
         seed: int = -1,
-        n_shot: int = -1
+        n_shot: int = -1,
+        start_shot: int = 0
     ):
         if self.split not in SPLIT_FILES:
             raise ValueError(f"Invalid split {self.split}")
@@ -207,8 +210,9 @@ class FGVC(DatasetFolder):
             if n == n_shot:
                 continue
             else:
+                if n >= start_shot:
+                    actual_samples.append(sample)
                 n += 1
-                actual_samples.append(sample)
         return actual_samples
 
 IMAGENET_CLASSES = ["tench", "goldfish", "great white shark", "tiger shark", "hammerhead shark", "electric ray",

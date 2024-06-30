@@ -15,7 +15,7 @@ DEFAULT_LR = 1e-3
 DEFAULT_EMA_DECAY = 0.997
 DEFAULT_SQUEEZE_RATIO = 0.25
 DEFAULT_ALPHA = 1.0
-DEFAULT_LABEL_SMOOTHING = 0.05
+DEFAULT_LABEL_SMOOTHING = 0.02
 DEFAULT_LOGIT_SCALE = 10.
 DEFAULT_T = 10.  # this ends up in the identity function
 
@@ -111,6 +111,7 @@ class INJECT(LightningModule):
         text_features = torch.tensor(text_features).float()
         self.register_buffer("text_features", text_features)
 
+        print(text_features.shape)
         N_class, L, D = text_features.shape
 
         self.se = Rose(D)
@@ -139,7 +140,7 @@ class INJECT(LightningModule):
         image_features = image_features.float()
         image_features = F.normalize(image_features, p=2, dim=-1)  # B x D
 
-        original_logits = image_features @ weights.mean(1).T
+        original_logits = image_features @ F.normalize(weights.mean(1).T, p=2, dim=-1)  # B x N_class
 
         image_features = self.se(image_features)
         image_features = F.normalize(image_features, p=2, dim=-1)  # B x D
@@ -196,14 +197,13 @@ class INJECT(LightningModule):
     def validation_step(self, batch, batch_idx, dataloader_idx=0):
         if batch_idx == 0:
             print()
-        torch.cuda.empty_cache()
         image, target = batch
         if len(image.shape) == 4:  # check if features are already encoded
             self.backbone.eval()
             image_features = self.backbone(image)
         else:
             image_features = image
-        for ratio in [0, .2, .4, .6, .8, .9, .95, 1.]:
+        for ratio in [0, .1, .2, .3, .4, .5, .6, .7, .8, .9, 1]:
             flag = "val" if self.test_flags is None else self.test_flags[dataloader_idx]
             logits = self.forward_inject(image_features, ratio=ratio)
             if flag == "imagenet-a":
@@ -234,11 +234,45 @@ class INJECT(LightningModule):
 
 
 
+class INJECTEnsemble(LightningModule):
 
 
+    def __init__(
+            self,
+            model1: INJECT,
+            model2: INJECT,
+    ):
+        super().__init__()
+        self.model1 = model1
+        self.model2 = model2
+        self.test_flags = model1.test_flags
 
+    def forward(self, image, ratio=.9):
+        logits1 = self.model1(image, ratio=ratio)
+        logits2 = self.model2(image, ratio=ratio)
+        return (logits1 + logits2) / 2
 
+    def validation_step(self, batch, batch_idx, dataloader_idx=0):
 
+        image, target = batch
+        if len(image.shape) == 4:  # check if features are already encoded
+            self.backbone.eval()
+            image_features = self.backbone(image)
+        else:
+            image_features = image
+        for ratio in [0, .1, .2, .3, .4, .5, .6, .7, .8, .9, 1]:
+            flag = "val" if self.test_flags is None else self.test_flags[dataloader_idx]
+            logits1 = self.model1.forward_inject(image_features, ratio=ratio)
+            logits2 = self.model2.forward_inject(image_features, ratio=ratio)
+            logits = (logits1 + logits2) / 2
+            if flag == "imagenet-a":
+                logits = logits[:, IMAGENET_A_IDX]
+            if flag == "imagenet-r":
+                logits = logits[:, IMAGENET_R_IDX]
+            acc = (logits.argmax(1) == target).float().mean()
+            self.log("{}_acc_{}".format(flag, ratio), acc, on_epoch=True, prog_bar=True, on_step=False)
+
+        return acc
 
 
 

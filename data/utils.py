@@ -60,7 +60,8 @@ def make_dataset(
     is_valid_file: Optional[Callable[[str], bool]] = None,
     allow_empty: bool = False,
     seed: int = -1,
-    n_shot: int = -1
+    n_shot: int = -1,
+    start_shot: int = 0
 ) -> List[Tuple[str, int]]:
     """Generates a list of samples of a form (path_to_sample, class).
 
@@ -102,8 +103,9 @@ def make_dataset(
                     random.seed(seed)
                     if len(iterator) > n_shot:
                         iterator = random.sample(iterator, n_shot)
+                        iterator = iterator[start_shot:]
                 else:
-                    iterator = iterator[:n_shot]  # some authors use the first n_shot images
+                    iterator = iterator[start_shot:n_shot]  # some authors use the first n_shot images
             for fname in iterator:
                 path = os.path.join(root, fname)
                 if is_valid_file(path):
@@ -162,7 +164,8 @@ class DatasetFolder(VisionDataset):
         is_valid_file: Optional[Callable[[str], bool]] = None,
         allow_empty: bool = False,
         seed: int = -1,
-        n_shot: int = -1
+        n_shot: int = -1,
+        start_shot: int = 0
     ) -> None:
         super().__init__(root, transform=transform, target_transform=target_transform)
         classes, class_to_idx = self.find_classes(self.root)
@@ -173,7 +176,8 @@ class DatasetFolder(VisionDataset):
             is_valid_file=is_valid_file,
             allow_empty=allow_empty,
             seed=seed,
-            n_shot=n_shot
+            n_shot=n_shot,
+            start_shot=start_shot
         )
 
         self.loader = loader
@@ -194,7 +198,8 @@ class DatasetFolder(VisionDataset):
         is_valid_file: Optional[Callable[[str], bool]] = None,
         allow_empty: bool = False,
         seed: int = -1,
-        n_shot: int = -1
+        n_shot: int = -1,
+        start_shot: int = 0
     ) -> List[Tuple[str, int]]:
         """Generates a list of samples of a form (path_to_sample, class).
 
@@ -213,6 +218,7 @@ class DatasetFolder(VisionDataset):
                 An error is raised on empty folders if False (default).
             seed (int, optional): Seed for the random number generator. Defaults to -1 (first samples).
             n_shot (int, optional): Number of samples to take from each class. Defaults to -1 (all).
+            start_shot: (int, optional): Index of the first sample to take from each class. Defaults to 0.
 
         Raises:
             ValueError: In case ``class_to_idx`` is empty.
@@ -229,7 +235,7 @@ class DatasetFolder(VisionDataset):
             raise ValueError("The class_to_idx parameter cannot be None.")
         return make_dataset(
             directory, class_to_idx, extensions=extensions, is_valid_file=is_valid_file, allow_empty=allow_empty,
-            seed=seed, n_shot=n_shot
+            seed=seed, n_shot=n_shot, start_shot=start_shot
         )
 
     def find_classes(self, directory: Union[str, Path]) -> Tuple[List[str], Dict[str, int]]:
@@ -377,7 +383,8 @@ class FewShotDataset(DatasetFolder):
         is_valid_file: Optional[Callable[[str], bool]] = None,
         allow_empty: bool = False,
         seed: int = -1,
-        n_shot: int = -1
+        n_shot: int = -1,
+        start_shot: int = 0
     ):
         super().__init__(
             root,
@@ -388,7 +395,8 @@ class FewShotDataset(DatasetFolder):
             is_valid_file=is_valid_file,
             allow_empty=allow_empty,
             seed=seed,
-            n_shot=n_shot
+            n_shot=n_shot,
+            start_shot=start_shot
         )
         self.imgs = self.samples
         self.random_seed = seed
@@ -408,7 +416,8 @@ class FewShotSplitDataset(FewShotDataset):
             is_valid_file: Optional[Callable[[str], bool]] = None,
             allow_empty: bool = False,
             seed: int = -1,
-            n_shot: int = -1
+            n_shot: int = -1,
+            start_shot: int = 0
     ):
         self.split_file = os.path.join(root, split_file)
         assert split in ["train", "val", "test"]
@@ -422,7 +431,8 @@ class FewShotSplitDataset(FewShotDataset):
             is_valid_file=is_valid_file,
             allow_empty=allow_empty,
             seed=seed,
-            n_shot=n_shot
+            n_shot=n_shot,
+            start_shot=start_shot
         )
 
     def find_classes(self, directory: Union[str, Path]) -> Tuple[List[str], Dict[str, int]]:
@@ -444,7 +454,8 @@ class FewShotSplitDataset(FewShotDataset):
         is_valid_file: Optional[Callable[[str], bool]] = None,
         allow_empty: bool = False,
         seed: int = -1,
-        n_shot: int = -1
+        n_shot: int = -1,
+        start_shot: int = 0
     ) -> List[Tuple[str, int]]:
 
         with open(self.split_file, 'r') as json_file:
@@ -461,9 +472,10 @@ class FewShotSplitDataset(FewShotDataset):
                 count[class_name] = 0
             if count[class_name] == n_shot:
                 continue
+            if count[class_name] >= start_shot:
+                im_path = os.path.join(image_folder, im_name)
+                samples.append((im_path, label))
             count[class_name] += 1
-            im_path = os.path.join(image_folder, im_name)
-            samples.append((im_path, label))
         return samples
 
 class LoadFewShotDataset(VisionDataset):

@@ -6,10 +6,12 @@ import os
 import templates as temps
 from data import DATASETS
 from tqdm import tqdm
+from utils import Backbone
+from utils import DEFAULT_TRANSFORMS, T
 import random
 
 @torch.no_grad()
-def cache_prompts(file_name, clip_model, templates, classes):
+def cache_prompts_clip(file_name, clip_model, templates, classes):
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model, _ = clip.load(clip_model)
     model.to(device)
@@ -25,88 +27,55 @@ def cache_prompts(file_name, clip_model, templates, classes):
     np.save(file_name, embeddings)
 
 @torch.no_grad()
-def cache_dataset(file_name, clip_model, dataset, teacher_model=None):
+def get_prompts_dinov2(dinov2_model, n_aug, ds):
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    model, preprocess = clip.load(clip_model)
+    model = Backbone(dinov2_model)
+    model.to(device)
+    model.eval()
+    embeddings = {j: [] for j in range(len(ds.classes))}
+    ds.transform = T.Compose([
+        DEFAULT_TRANSFORMS,
+        model.preprocess
+    ])
+    for j in tqdm(range(len(ds))):
+        _, y = ds[j]
+        x = []
+        for _ in range(n_aug):
+            im = ds[j][0]
+            x.append(im)
+        x = torch.stack(x)
+        x = x.to(device)
+        image_features = model(x)
+        image_features = torch.nn.functional.normalize(image_features, p=2, dim=-1)
+        embeddings[y].append(image_features.cpu().numpy())
+    embeddings = [np.concatenate(embeddings[j]) for j in range(len(ds.classes))]
+    embeddings = np.stack(embeddings)
+    return embeddings
+
+@torch.no_grad()
+def cache_dataset(file_name, model, dataset):
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model = Backbone(model)
     model.to(device)
     model.eval()
 
-    if teacher_model is not None:
-        teacher, preprocess_teacher = clip.load(teacher_model)
-        teacher.to(device)
-        teacher.eval()
-        teacher_embeddings = []
-
     embeddings = []
     labels = []
-    dataset.transform = preprocess
+    dataset.transform = model.preprocess
     loader = torch.utils.data.DataLoader(dataset, batch_size=64, num_workers=4)
     for batch in tqdm(loader):
         image, y = batch
         image = image.to(device)
 
-        image_features = model.encode_image(image)
+        image_features = model(image)
         image_features = torch.nn.functional.normalize(image_features, p=2, dim=-1)
         embeddings.append(image_features.cpu().numpy())
         labels.append(y.numpy())
 
-    if teacher_model is not None:
-        dataset.transform = preprocess_teacher
-        loader = torch.utils.data.DataLoader(dataset, batch_size=64, num_workers=4)
-        for batch in tqdm(loader):
-            image, _ = batch
-            image = image.to(device)
-            teacher_features = teacher.encode_image(image)
-            teacher_features = torch.nn.functional.normalize(teacher_features, p=2, dim=-1)
-            teacher_embeddings.append(teacher_features.cpu().numpy())
-    embeddings = np.concatenate(embeddings)
-    labels = np.concatenate(labels)
-    if teacher_model is not None:
-        teacher_embeddings = np.concatenate(teacher_embeddings)
-        np.savez(file_name, embeddings=embeddings, labels=labels, teacher=teacher_embeddings)
-    else:
-        np.savez(file_name, embeddings=embeddings, labels=labels)
+    embeddings = np.concatenate(embeddings, axis=0)
+    labels = np.concatenate(labels, axis=0)
 
-@torch.no_grad()
-def cache_prompt_for_distillation(file_name, clip_model, teacher_model, templates, classes, post_sentences, n_templates):
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    student, _ = clip.load(clip_model)
-    student.to(device)
-    student.eval()
-
-    teacher, _ = clip.load(teacher_model)
-    teacher.to(device)
-    teacher.eval()
-
-    teacher_embeddings = []
-    student_embeddings = []
-
-
-    for cls in tqdm(classes):
-
-        texts = []
-        for template in random.choices(templates, k=n_templates):
-            post_sentence = random.choice(post_sentences)
-            text = template.format(cls) + " " + post_sentence
-            texts.append(text)
-
-        with torch.no_grad():
-            teacher_features = teacher.encode_text(clip.tokenize(texts).to(device))
-            teacher_features /= teacher_features.norm(dim=-1, keepdim=True)
-
-            student_features = student.encode_text(clip.tokenize(texts).to(device))
-            student_features /= student_features.norm(dim=-1, keepdim=True)
-
-            teacher_embeddings.append(teacher_features)
-            student_embeddings.append(student_features)
-
-    teacher_embeddings = torch.stack(teacher_embeddings)
-    student_embeddings = torch.stack(student_embeddings)
-
-    teacher_embeddings = teacher_embeddings.detach().cpu().numpy()
-    student_embeddings = student_embeddings.detach().cpu().numpy()
-
-    np.savez(file_name, teacher=teacher_embeddings, student=student_embeddings)
+    np.savez(file_name, embeddings=embeddings, labels=labels)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -118,7 +87,8 @@ if __name__ == "__main__":
     CACHED_FEATURES = "cached-features"
 
     parser.add_argument("dataset_identifier", type=str)
-    parser.add_argument("clip_model", type=str)
+    parser.add_argument("model", type=str)
+    parser.add_argument("--n-augs", type=int, default=0)
     parser.add_argument("--split", type=str, default=None)
     parser.add_argument("--cache-dir", default=CACHED_FEATURES, type=str)
     parser.add_argument("--root", default=default_root, type=str)
@@ -126,49 +96,42 @@ if __name__ == "__main__":
 
     parser.add_argument("--cache-prompts", action="store_true", default=False)
     parser.add_argument("--cache-dataset", action="store_true", default=False)
-    parser.add_argument("--cache-distillation-prompts", action="store_true", default=False)
 
     # must be set if cache-prompts or cache-distillation-prompts is true
     parser.add_argument("--templates", default=None, type=str)
-
-    # must be set if cache-distillation-prompts is true
-    parser.add_argument("--teacher-model", type=str, default=None)
-    parser.add_argument("--post-sentences", type=str, default=None)
-    parser.add_argument("--n-templates", type=int, default=100)
 
 
     args = parser.parse_args()
     os.makedirs(args.cache_dir, exist_ok=True)
 
     cache_dir = args.cache_dir
-    cache_dir = os.path.join(cache_dir, args.clip_model)
+    cache_dir = os.path.join(cache_dir, args.model)
     os.makedirs(cache_dir, exist_ok=True)
 
     if args.cache_prompts:
-        assert args.templates is not None
-        templates = getattr(temps, args.templates)
-        file_name = os.path.join(cache_dir, f"{args.dataset_identifier}-{args.templates}.npy")
-        ds = DATASETS.get(args.dataset_identifier)(args.root, "train")
-        classes = [cls for _, cls in ds.idx_to_class.items()]
-        cache_prompts(file_name, args.clip_model, templates, classes)
+        if args.model.startswith("dinov2"):
+            assert args.n_augs > 0
+            n_shot = args.n_shot
+            file_name = os.path.join(cache_dir, f"{args.dataset_identifier}-{n_shot}.npz")
+            ds1 = DATASETS.get(args.dataset_identifier)(args.root, "train", n_shot=n_shot, start_shot=n_shot//2)
+            ds2 = DATASETS.get(args.dataset_identifier)(args.root, "train", n_shot=n_shot//2, start_shot=0)
+            emb1 = get_prompts_dinov2(args.model, args.n_augs, ds1)
+            emb2 = get_prompts_dinov2(args.model, args.n_augs, ds2)
+            np.savez(file_name, emb1=emb1, emb2=emb2)
+        else:  # clip
+            assert args.templates is not None
+            templates = getattr(temps, args.templates)
+            file_name = os.path.join(cache_dir, f"{args.dataset_identifier}-{args.templates}.npy")
+            ds = DATASETS.get(args.dataset_identifier)(args.root, "train")
+            classes = [cls for _, cls in ds.idx_to_class.items()]
+            cache_prompts_clip(file_name, args.model, templates, classes)
 
     if args.cache_dataset:
         assert args.split is not None
-        postfix = "" if args.teacher_model is None else "-{}".format(args.teacher_model.replace("/", "-"))
-        file_name = os.path.join(cache_dir, f"{args.dataset_identifier}-{args.split}{postfix}-features.npz")
+        file_name = os.path.join(cache_dir, f"{args.dataset_identifier}-{args.split}-features.npz")
         ds = DATASETS.get(args.dataset_identifier)(args.root, args.split, n_shot=args.n_shot)
-        cache_dataset(file_name, args.clip_model, ds, teacher_model=args.teacher_model)
+        cache_dataset(file_name, args.model, ds)
 
-    if args.cache_distillation_prompts:
-        assert args.teacher_model is not None
-        assert args.post_sentences is not None
-        templates = getattr(temps, args.templates)
-        post_sentences = getattr(temps, args.post_sentences)
-        postfix = args.teacher_model.replace("/", "-")
-        file_name = os.path.join(cache_dir, f"{args.dataset_identifier}-{postfix}.npz")
-        ds = DATASETS.get(args.dataset_identifier)(args.root, "train")
-        classes = [cls for _, cls in ds.idx_to_class.items()]
-        cache_prompt_for_distillation(file_name, args.clip_model, args.teacher_model, templates, classes, post_sentences, args.n_templates)
 
 
 
