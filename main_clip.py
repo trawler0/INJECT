@@ -21,9 +21,9 @@ def main():
         raise ValueError("Please set the environment variable DATA_ROOT to the folder where all datasets are stored")
     CACHED_FEATURES = "cached-features"
 
-    parser.add_argument("dataset-identifier", type=str)
-    parser.add_argument("clip-model", type=str)
-    parser.add_argument("n-shot", type=int)
+    parser.add_argument("dataset_identifier", type=str)
+    parser.add_argument("clip_model", type=str)
+    parser.add_argument("n_shot", type=int)
     parser.add_argument("templates", type=str)
     parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--batch-size", type=int, default=64)
