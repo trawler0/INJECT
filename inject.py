@@ -245,7 +245,7 @@ class INJECT(LightningModule):
         }
 
 # for DINOv2 models we need data samples as prompts, so splitting 50/50 into prompts and training samples is natural.
-# Peroformance is improved by switching roles of the two models and ensembling them.
+# Performance is improved by switching roles of the two models and ensembling them.
 
 class INJECTEnsemble(LightningModule):
 

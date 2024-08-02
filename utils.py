@@ -12,10 +12,10 @@ __all__ = [
     "DEFAULT_TRANSFORMS"
 ]
 
-DEFAULT_IMAGE_SIZE = 224
+DEFAULT_IMAGE_SIZE = 518  # for dinov2 models, will automatically be re-resized if clip is used
 # these have proven to work well for training, augmentations are very important for these purposes
 DEFAULT_TRANSFORMS = T.Compose([
-            T.RandomResizedCrop(224, scale=(0.2, 1.0)),
+            T.RandomResizedCrop(DEFAULT_IMAGE_SIZE, scale=(0.2, 1.0)),
             T.RandomHorizontalFlip(),
             T.RandomGrayscale(p=0.2),
             T.RandomApply([
