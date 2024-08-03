@@ -19,7 +19,6 @@ DEFAULT_LABEL_SMOOTHING = 0.02
 DEFAULT_LOGIT_SCALE = 10.
 DEFAULT_T = 10.  # this ends up in the identity function
 
-__all__ = ["INJECT"]
 
 class OrthogonalLinear(nn.Module):
     def __init__(self, features: int):
@@ -270,7 +269,7 @@ class INJECTEnsemble(LightningModule):
         image, target = batch
         if len(image.shape) == 4:  # check if features are already encoded
             self.backbone.eval()
-            image_features = self.backbone(image)
+            image_features = self.model1.backbone(image)
         else:
             image_features = image
         for ratio in [0, .1, .2, .3, .4, .5, .6, .7, .8, .9, 1]:
