@@ -287,6 +287,149 @@ class INJECTEnsemble(LightningModule):
         return acc
 
 
+class INJECTSSL(LightningModule):
+    def __init__(
+            self,
+            backbone: nn.Module,
+            text_features: Union[np.ndarray, torch.Tensor],
+            label_smoothing: float = DEFAULT_LABEL_SMOOTHING,
+            lr: float = DEFAULT_LR,
+            ema_decay: float = DEFAULT_EMA_DECAY,
+            temperature: float = .1,
+            test_flags: List[str] = None,
+            T: float = DEFAULT_T
+    ):
+        """
+        INJECT model, injects new knowledge into the baseline heuristic of comparing inputs with prompts
+        :param backbone: a CLIP or DINOv2 model
+        :param text_features: precomputed embeddings of the prompts N_class x L x D (L is the number of prompts for each class)
+        :param label_smoothing: label smoothing during training
+        :param lr: learning rate
+        :param ema_decay: exponential moving average decay, can improve robustness
+        :param logit_scale: the learnable logit scale initialization
+        :param test_flags: used if imagenet is the dataset, to evaluate on imagenet-a and imagenet-r
+        :param T: a rescaling parameter for experimental purposes, does not seem to be useful
+        """
+        super().__init__()
+        self.backbone = backbone
+        text_features = torch.tensor(text_features).float()
+        self.register_buffer("text_features", text_features)
+
+        print(text_features.shape)
+        N_class, L, D = text_features.shape
+
+        self.se = Rose(D)
+
+        self.alpha = nn.Parameter(torch.zeros(N_class, L))
+        self.label_smoothing = label_smoothing
+        self.lr = lr
+
+        self.temperature = temperature
+        self.test_flags = test_flags
+
+        self.ema = deepcopy(self)
+        self.ema_decay = ema_decay
+        self.T = T
+
+    def _weighing(self, sims):
+        if self.training:
+            return sims
+        else:
+            return self.T * (torch.exp(sims / self.T) - 1)  # renormalization
+
+    def forward_inject(self, image_features, ratio=1.):
+        weights = self.text_features  # N_class x L x D
+        weights = F.normalize(weights, p=2, dim=-1)
+
+        image_features = image_features.float()
+        image_features = F.normalize(image_features, p=2, dim=-1)  # B x D
+
+        original_logits = image_features @ F.normalize(weights.mean(1).T, p=2, dim=-1)  # B x N_class
+
+        image_features = self.se(image_features)
+        image_features = F.normalize(image_features, p=2, dim=-1)  # B x D
+
+        sims = weights @ image_features.T  # N_class x L x B
+        sims = sims.permute(2, 0, 1)  # B x N_class x L
+        sims = self._weighing(sims)
+
+        t = torch.exp(self.alpha).unsqueeze(0)  # 1 x N_class x L
+        t = t / t.sum(dim=-1, keepdim=True)
+        sims = sims * t  # B x N_class x L
+
+        logits = sims.sum(dim=-1)   # B x N_class
+
+        logits = (ratio * logits + (1 - ratio) * original_logits) / self.temperature
+        target = torch.argmax(original_logits, dim=-1)
+
+        return logits, target
 
 
+    def forward(self, image, ratio=.9):
+        image_features = self.backbone(image)
+        return self.forward_inject(image_features, ratio=ratio)
 
+    def training_step(self, batch, batch_idx):
+        sleep(0.005)  # if using encoded features, need this to prevent computer from freezing
+        torch.cuda.empty_cache()
+        image_features, y = batch
+        with torch.no_grad():
+            self.backbone.eval()  # it is very important to run CLIP in eval if resnets are used (batch-norm), otherwise it won't work
+            if len(image_features.shape) == 4:  # check if features are already encoded
+                image_features = self.backbone(image_features)
+
+
+        logits, target = self.forward_inject(image_features)
+        loss = F.cross_entropy(logits, target, label_smoothing=self.label_smoothing)
+
+        acc = (logits.argmax(1) == y).float().mean() * 100
+
+        self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True)
+        self.log("train_acc", acc, on_step=True, on_epoch=True, prog_bar=True)
+
+
+        estd = self.ema.state_dict()
+        mstd = self.state_dict()
+        for k, v in self.ema.state_dict().items():
+            estd[k] = self.ema_decay * v + (1 - self.ema_decay) * mstd[k]
+        self.ema.load_state_dict(estd)
+
+
+        return loss
+
+    def validation_step(self, batch, batch_idx, dataloader_idx=0):
+        if batch_idx == 0:
+            print()
+        image, target = batch
+        if len(image.shape) == 4:  # check if features are already encoded
+            self.backbone.eval()
+            image_features = self.backbone(image)
+        else:
+            image_features = image
+        for ratio in [0, .1, .2, .3, .4, .5, .6, .7, .8, .9, 1]:
+            flag = "val" if self.test_flags is None else self.test_flags[dataloader_idx]
+            logits, _ = self.forward_inject(image_features, ratio=ratio)
+            if flag == "imagenet-a":
+                logits = logits[:, IMAGENET_A_IDX]
+            if flag == "imagenet-r":
+                logits = logits[:, IMAGENET_R_IDX]
+            acc = (logits.argmax(1) == target).float().mean()
+            self.log("{}_acc_{}".format(flag, ratio), acc, on_epoch=True, prog_bar=True, on_step=False)
+
+        return acc
+
+    def configure_optimizers(self):
+        params = [
+            {"params": self.se.parameters()},
+            {"params": self.alpha, "lr": self.lr * 10},
+        ]
+        optimizer = torch.optim.AdamW(params, lr=self.lr)
+        total_steps = self.trainer.estimated_stepping_batches
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, total_steps)
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": scheduler,
+                "interval": "step",
+            },
+        }
