@@ -40,7 +40,6 @@ def get_prompts_dinov2(dinov2_model, n_aug, ds):
     for j in tqdm(range(len(ds))):
         _, y = ds[j]
         x = []
-        print(ds[j][0].shape)
         for _ in range(n_aug):
             im = ds[j][0]
             x.append(im)
