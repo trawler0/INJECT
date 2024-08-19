@@ -30,6 +30,7 @@ def main():
     parser.add_argument("--test-ema", action="store_true", default=False)
     parser.add_argument("--save_weights", action="store_true", default=False)
     parser.add_argument("--epoch-multiplier", type=float, default=1.)
+    parser.add_argument("--mislabel-randomly", type=float, default=0.)
 
     args = parser.parse_args()
 
@@ -75,8 +76,8 @@ def main():
         prompts = os.path.join(cache_dir, f"{args.dataset_identifier}-{args.n_shot}.npz")
         prompts = np.load(prompts)
         p1, p2 = prompts["emb1"], prompts["emb2"]
-        ds1 = DATASETS.get(args.dataset_identifier)(args.root, "train", n_shot=args.n_shot, start_shot=args.n_shot//2, transform=train_transforms, seed=args.seed)
-        ds2 = DATASETS.get(args.dataset_identifier)(args.root, "train", n_shot=args.n_shot//2, start_shot=0, transform=train_transforms, seed=args.seed)
+        ds1 = DATASETS.get(args.dataset_identifier)(args.root, "train", n_shot=args.n_shot, start_shot=args.n_shot//2, transform=train_transforms, seed=args.seed, mislabel_randomly=args.mislabel_randomly)
+        ds2 = DATASETS.get(args.dataset_identifier)(args.root, "train", n_shot=args.n_shot//2, start_shot=0, transform=train_transforms, seed=args.seed, mislabel_randomly=args.mislabel_randomly)
 
         # need to use leave use 50% as prompts and 50% as training samples, switching roles and ensembling improves performance
 

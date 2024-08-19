@@ -151,7 +151,7 @@ class INJECT(LightningModule):
         image_features = image_features.float()
         image_features = F.normalize(image_features, p=2, dim=-1)  # B x D
 
-        original_logits = image_features @ F.normalize(weights.mean(1).T, p=2, dim=-1)  # B x N_class
+        original_logits = image_features @ F.normalize(weights.mean(1), p=2, dim=-1).T  # B x N_class
 
         image_features = self.se(image_features)
         image_features = F.normalize(image_features, p=2, dim=-1)  # B x D
@@ -160,8 +160,9 @@ class INJECT(LightningModule):
         sims = sims.permute(2, 0, 1)  # B x N_class x L
         sims = self._weighing(sims)
 
-        t = torch.exp(self.alpha).unsqueeze(0)  # 1 x N_class x L
-        t = t / t.sum(dim=-1, keepdim=True)
+        t = torch.softmax(self.alpha, dim=-1).unsqueeze(0)  # 1 x N_class x L
+        #t = torch.exp(self.alpha).unsqueeze(0)  # 1 x N_class x L
+        #t = t / t.sum(dim=-1, keepdim=True)
         sims = sims * t  # B x N_class x L
 
         logit_scale = torch.exp(self.logit_scale)

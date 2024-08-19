@@ -83,7 +83,7 @@ def main():
         train_dataset = DATASETS.get(args.dataset_identifier)(args.root, "train", n_shot=args.n_shot, seed=args.seed, transform=train_transforms)
 
         val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=1024, num_workers=0)
-        train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, num_workers=2, shuffle=True, drop_last=True, persistent_workers=True)
+        train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, num_workers=4, shuffle=True, drop_last=True, persistent_workers=True)
 
 
         print("Starting training on", args.dataset_identifier)

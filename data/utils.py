@@ -382,7 +382,8 @@ class FewShotDataset(DatasetFolder):
         allow_empty: bool = False,
         seed: int = -1,
         n_shot: int = -1,
-        start_shot: int = 0
+        start_shot: int = 0,
+        mislabel_randomly: float = 0.0
     ):
         super().__init__(
             root,
@@ -398,6 +399,14 @@ class FewShotDataset(DatasetFolder):
         )
         self.imgs = self.samples
         self.random_seed = seed
+
+        if mislabel_randomly > 0:
+            random.seed(seed)
+            idx = list(self.idx_to_class.keys())
+            for i in range(len(self.samples)):
+                if random.random() < mislabel_randomly:
+                    self.samples[i] = (self.samples[i][0], random.choice(idx))
+                    self.targets[i] = self.samples[i][1]
 
 
 class FewShotSplitDataset(FewShotDataset):
@@ -415,7 +424,8 @@ class FewShotSplitDataset(FewShotDataset):
             allow_empty: bool = False,
             seed: int = -1,
             n_shot: int = -1,
-            start_shot: int = 0
+            start_shot: int = 0,
+            mislabel_randomly: float = 0.0
     ):
         self.split_file = os.path.join(root, split_file)
         assert split in ["train", "val", "test"]
@@ -430,7 +440,8 @@ class FewShotSplitDataset(FewShotDataset):
             allow_empty=allow_empty,
             seed=seed,
             n_shot=n_shot,
-            start_shot=start_shot
+            start_shot=start_shot,
+            mislabel_randomly=mislabel_randomly
         )
 
     def find_classes(self, directory: Union[str, Path]) -> Tuple[List[str], Dict[str, int]]:

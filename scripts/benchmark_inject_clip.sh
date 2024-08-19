@@ -13,7 +13,7 @@ python main_clip.py oxford_flowers "$clip_model" "$n_shots" AUGMENTED_FLOWERS_TE
 python main_clip.py oxford_pets "$clip_model" "$n_shots" AUGMENTED_OXFORD_PETS_TEMPLATES  --epochs 40 --epoch-multiplier "$epoch_multiplier"
 python main_clip.py standford_cars "$clip_model" "$n_shots" AUGMENTED_STANDFORD_CARS_TEMPLATES --epochs 40 --epoch-multiplier "$epoch_multiplier" # no proper tuning
 python main_clip.py ucf101 "$clip_model" "$n_shots" CLIP_UCF101_TEMPLATES --epochs 100 --epoch-multiplier "$epoch_multiplier"
-python main_clip.py imagenet "$clip_model" 16 CLIP_IMAGENET_TEMPLATES --epochs 20 --epoch-multiplier "$epoch_multiplier"
+python main_clip.py imagenet "$clip_model" "$n_shots" CLIP_IMAGENET_TEMPLATES --epochs 20 --epoch-multiplier "$epoch_multiplier"
 
 
 ""
