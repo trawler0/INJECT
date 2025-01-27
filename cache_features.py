@@ -11,7 +11,7 @@ from utils import DEFAULT_TRANSFORMS, T
 import random
 
 @torch.no_grad()
-def cache_prompts_clip(file_name, clip_model, templates, classes):
+def get_prompts_clip(clip_model, templates, classes):
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model, _ = clip.load(clip_model)
     model.to(device)
@@ -24,15 +24,16 @@ def cache_prompts_clip(file_name, clip_model, templates, classes):
         text_features = torch.nn.functional.normalize(text_features, p=2, dim=-1)
         embeddings.append(text_features.cpu().numpy())
     embeddings = np.stack(embeddings)
-    np.save(file_name, embeddings)
+    return embeddings
 
 @torch.no_grad()
-def get_prompts_dinov2(dinov2_model, n_aug, ds):
+def get_images_clip(clip_model, n_aug, ds):
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    model = Backbone(dinov2_model)
+    model = Backbone(clip_model)
     model.to(device)
     model.eval()
     embeddings = {j: [] for j in range(len(ds.classes))}
+    idxs = {j: [] for j in range(len(ds.classes))}
     ds.transform = T.Compose([
         DEFAULT_TRANSFORMS,
         model.preprocess
@@ -48,9 +49,45 @@ def get_prompts_dinov2(dinov2_model, n_aug, ds):
         image_features = model(x)
         image_features = torch.nn.functional.normalize(image_features, p=2, dim=-1)
         embeddings[y].append(image_features.cpu().numpy())
+        idx = np.ones(len(image_features)) * j
+        idxs[y].append(idx)
     embeddings = [np.concatenate(embeddings[j]) for j in range(len(ds.classes))]
+    idxs = [np.concatenate(idxs[j]) for j in range(len(ds.classes))]
     embeddings = np.stack(embeddings)
-    return embeddings
+    idxs = np.stack(idxs)
+    return embeddings, idxs
+
+@torch.no_grad()
+def get_prompts_dinov2(dinov2_model, n_aug, ds):
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model = Backbone(dinov2_model)
+    model.to(device)
+    model.eval()
+    embeddings = {j: [] for j in range(len(ds.classes))}
+    idxs = {j: [] for j in range(len(ds.classes))}
+    ds.transform = T.Compose([
+        DEFAULT_TRANSFORMS,
+        model.preprocess
+    ])
+    for j in tqdm(range(len(ds))):
+        _, y = ds[j]
+        x = []
+        for _ in range(n_aug):
+            im = ds[j][0]
+            x.append(im)
+        x = torch.stack(x)
+        x = x.to(device)
+        image_features = model(x)
+        image_features = torch.nn.functional.normalize(image_features, p=2, dim=-1)
+        embeddings[y].append(image_features.cpu().numpy())
+        idx = np.ones(len(image_features)) * j
+        idxs[y].append(idx)
+
+    embeddings = [np.concatenate(embeddings[j]) for j in range(len(ds.classes))]
+    idxs = [np.concatenate(idxs[j]) for j in range(len(ds.classes))]
+    embeddings = np.stack(embeddings)
+    idxs = np.stack(idxs)
+    return embeddings, idxs
 
 @torch.no_grad()
 def cache_dataset(file_name, model, dataset):
@@ -80,15 +117,14 @@ def cache_dataset(file_name, model, dataset):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
-    try:
-        default_root = os.getenv("DATA_ROOT")
-    except:
-        raise ValueError("Please set the environment variable DATA_ROOT to the folder where all datasets are stored")
+    default_root = os.getenv("DATA_ROOT")
+    if default_root is None:
+        default_root = os.path.join("/home/marco/data")
     CACHED_FEATURES = "cached-features"
 
     parser.add_argument("dataset_identifier", type=str)
     parser.add_argument("model", type=str)
-    parser.add_argument("--n-augs", type=int, default=0)
+    parser.add_argument("--n-augs", type=int, default=4)
     parser.add_argument("--split", type=str, default=None)
     parser.add_argument("--cache-dir", default=CACHED_FEATURES, type=str)
     parser.add_argument("--root", default=default_root, type=str)
@@ -113,18 +149,22 @@ if __name__ == "__main__":
             assert args.n_augs > 0
             n_shot = args.n_shot
             file_name = os.path.join(cache_dir, f"{args.dataset_identifier}-{n_shot}.npz")
-            ds1 = DATASETS.get(args.dataset_identifier)(args.root, "train", n_shot=n_shot, start_shot=n_shot//2)
-            ds2 = DATASETS.get(args.dataset_identifier)(args.root, "train", n_shot=n_shot//2, start_shot=0)
-            emb1 = get_prompts_dinov2(args.model, args.n_augs, ds1)
-            emb2 = get_prompts_dinov2(args.model, args.n_augs, ds2)
-            np.savez(file_name, emb1=emb1, emb2=emb2)
+            ds = DATASETS.get(args.dataset_identifier)(args.root, "train", n_shot=n_shot)
+            emb, idxs = get_prompts_dinov2(args.model, args.n_augs, ds)
+            np.savez(file_name, emb=emb, idxs=idxs)
         else:  # clip
             assert args.templates is not None
             templates = getattr(temps, args.templates)
             file_name = os.path.join(cache_dir, f"{args.dataset_identifier}-{args.templates}.npy")
-            ds = DATASETS.get(args.dataset_identifier)(args.root, "train")
+            ds = DATASETS.get(args.dataset_identifier)(args.root, "train", n_shot=args.n_shot)
             classes = [cls for _, cls in ds.idx_to_class.items()]
-            cache_prompts_clip(file_name, args.model, templates, classes)
+            embeddings = get_prompts_clip(args.model, templates, classes)
+            np.save(file_name, embeddings)
+
+            file_name = os.path.join(cache_dir, f"{args.dataset_identifier}-features.npz")
+            ds = DATASETS.get(args.dataset_identifier)(args.root, "train", n_shot=args.n_shot)
+            emb, idxs = get_images_clip(args.model, args.n_augs, ds)
+            np.savez(file_name, emb=emb, idxs=idxs)
 
     if args.cache_dataset:
         assert args.split is not None

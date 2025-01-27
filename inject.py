@@ -12,6 +12,7 @@ from templates import IMAGENET_A_IDX, IMAGENET_R_IDX
 import random
 
 DEFAULT_LR = 1e-3
+DEFAULT_LR_BACKOBONE = 0.
 DEFAULT_EMA_DECAY = 0.997
 DEFAULT_SQUEEZE_RATIO = 0.25
 DEFAULT_ALPHA = 1.0
@@ -99,8 +100,10 @@ class INJECT(LightningModule):
             self,
             backbone: nn.Module,
             text_features: Union[np.ndarray, torch.Tensor],
+            idxs,
             label_smoothing: float = DEFAULT_LABEL_SMOOTHING,
             lr: float = DEFAULT_LR,
+            lr_backbone: float = DEFAULT_LR_BACKOBONE,
             ema_decay: float = DEFAULT_EMA_DECAY,
             logit_scale: float = DEFAULT_LOGIT_SCALE,
             test_flags: List[str] = None,
@@ -120,9 +123,10 @@ class INJECT(LightningModule):
         super().__init__()
         self.backbone = backbone
         text_features = torch.tensor(text_features).float()
+        idxs = torch.tensor(idxs).long()
         self.register_buffer("text_features", text_features)
+        self.register_buffer("idxs", idxs)
 
-        print(text_features.shape)
         N_class, L, D = text_features.shape
 
         self.se = Rose(D)
@@ -130,6 +134,7 @@ class INJECT(LightningModule):
         self.alpha = nn.Parameter(torch.zeros(N_class, L))
         self.label_smoothing = label_smoothing
         self.lr = lr
+        self.lr_backbone = lr_backbone
 
         self.logit_scale = nn.Parameter(torch.tensor(math.log(logit_scale)))
         self.test_flags = test_flags
@@ -144,7 +149,7 @@ class INJECT(LightningModule):
         else:
             return self.T * (torch.exp(sims / self.T) - 1)  # renormalization
 
-    def forward_inject(self, image_features, ratio=1.):
+    def forward_inject(self, image_features, idx=None, ratio=1.):
         weights = self.text_features  # N_class x L x D
         weights = F.normalize(weights, p=2, dim=-1)
 
@@ -160,9 +165,12 @@ class INJECT(LightningModule):
         sims = sims.permute(2, 0, 1)  # B x N_class x L
         sims = self._weighing(sims)
 
-        t = torch.softmax(self.alpha, dim=-1).unsqueeze(0)  # 1 x N_class x L
-        #t = torch.exp(self.alpha).unsqueeze(0)  # 1 x N_class x L
-        #t = t / t.sum(dim=-1, keepdim=True)
+        if idx is not None:
+            mask = (idx.view(-1, 1, 1) == self.idxs.unsqueeze(0)).float()
+            alpha = self.alpha.unsqueeze(0) - 1e9 * mask
+        else:
+            alpha = self.alpha.unsqueeze(0)
+        t = torch.softmax(alpha, dim=-1)  # 1 x N_class x L
         sims = sims * t  # B x N_class x L
 
         logit_scale = torch.exp(self.logit_scale)
@@ -180,14 +188,14 @@ class INJECT(LightningModule):
     def training_step(self, batch, batch_idx):
         sleep(0.005)  # if using encoded features, need this to prevent computer from freezing
         torch.cuda.empty_cache()
-        image_features, target = batch
+        (image_features, target), idx = batch
         with torch.no_grad():
             self.backbone.eval()  # it is very important to run CLIP in eval if resnets are used (batch-norm), otherwise it won't work
             if len(image_features.shape) == 4:  # check if features are already encoded
                 image_features = self.backbone(image_features)
 
 
-        logits = self.forward_inject(image_features)
+        logits = self.forward_inject(image_features, idx)
         loss = F.cross_entropy(logits, target, label_smoothing=self.label_smoothing)
         acc = (logits.argmax(1) == target).float().mean() * 100
 
@@ -229,6 +237,7 @@ class INJECT(LightningModule):
 
     def configure_optimizers(self):
         params = [
+            {"params": self.backbone.parameters(), "lr": self.lr_backbone},
             {"params": self.se.parameters()},
             {"params": self.alpha, "lr": self.lr * 10},
             {"params": self.logit_scale, "lr": self.lr * 10}
@@ -269,7 +278,7 @@ class INJECTEnsemble(LightningModule):
 
         image, target = batch
         if len(image.shape) == 4:  # check if features are already encoded
-            self.backbone.eval()
+            self.eval()
             image_features = self.model1.backbone(image)
         else:
             image_features = image
@@ -374,10 +383,10 @@ class INJECTSSL(LightningModule):
         sleep(0.005)  # if using encoded features, need this to prevent computer from freezing
         torch.cuda.empty_cache()
         image_features, y = batch
-        with torch.no_grad():
-            self.backbone.eval()  # it is very important to run CLIP in eval if resnets are used (batch-norm), otherwise it won't work
-            if len(image_features.shape) == 4:  # check if features are already encoded
-                image_features = self.backbone(image_features)
+
+        self.backbone.eval()  # it is very important to run CLIP in eval if resnets are used (batch-norm), otherwise it won't work
+        if len(image_features.shape) == 4:  # check if features are already encoded
+            image_features = self.backbone(image_features)
 
 
         logits, target = self.forward_inject(image_features)
