@@ -85,6 +85,13 @@ def get_prompts_dinov2(dinov2_model, n_aug, ds):
 
     embeddings = [np.concatenate(embeddings[j]) for j in range(len(ds.classes))]
     idxs = [np.concatenate(idxs[j]) for j in range(len(ds.classes))]
+    M = max(x.shape[0] for x in embeddings)
+    for j in range(len(ds.classes)):
+        if embeddings[j].shape[0] < M:
+            n = M - embeddings[j].shape[0]
+            choice = np.random.randint(0, embeddings[j].shape[0], n)
+            embeddings[j] = np.concatenate([embeddings[j], embeddings[j][choice]])
+            idxs[j] = np.concatenate([idxs[j], idxs[j][choice]])
     embeddings = np.stack(embeddings)
     idxs = np.stack(idxs)
     return embeddings, idxs

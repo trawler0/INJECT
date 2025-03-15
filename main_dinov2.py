@@ -1,4 +1,4 @@
-from inject import INJECT, INJECTEnsemble
+from inject import INJECT, BaselineEvaluator
 from utils import Backbone, CachedDataset, log_metrics, DEFAULT_TRANSFORMS
 from pytorch_lightning import Trainer
 import mlflow
@@ -9,6 +9,7 @@ from data import DATASETS, IdxDataset
 import torch
 from torchvision import transforms as T
 from lora import lora_dinov2
+from tqdm import tqdm
 
 def main():
     parser = argparse.ArgumentParser()
@@ -32,7 +33,7 @@ def main():
     parser.add_argument("--save_weights", action="store_true", default=False)
     parser.add_argument("--epoch-multiplier", type=float, default=1.)
     parser.add_argument("--lora-strategy", type=str, default="none")
-    parser.add_argument("--val-frequency", type=int, default=1)
+    parser.add_argument("--val-frequency", type=int, default=10)
     parser.add_argument("--experiment", type=str, default=None)
 
     args = parser.parse_args()
@@ -75,7 +76,10 @@ def main():
             val_dataset = CachedDataset(val_cached)
         else:
             val_dataset = DATASETS.get(args.dataset_identifier)(args.root, "val", transform=backbone.preprocess)
+        baseline_dataset = DATASETS.get(args.dataset_identifier)(args.root, "train", transform=backbone.preprocess, n_shot=args.n_shot, seed=args.seed)
+
         val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=32, num_workers=0)
+        baseline_loader = torch.utils.data.DataLoader(baseline_dataset, batch_size=32, num_workers=0)
 
         test_dataloaders = []
         for test_flag in test_flags:
@@ -86,6 +90,26 @@ def main():
                 test_dataset = DATASETS.get(args.dataset_identifier)(args.root, test_flag, transform=backbone.preprocess)
             test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=32, num_workers=0)
             test_dataloaders.append(test_dataloader)
+
+        def baseline_eval():
+            feats = []
+            labels = []
+            backbone.eval()
+            backbone.cuda()
+            for x, y in tqdm(baseline_loader):
+                x = x.cuda()
+                with torch.no_grad():
+                    feat = backbone(x)
+                feats.append(feat.detach().cpu())
+                labels.append(y)
+            feats = torch.cat(feats)
+            labels = torch.cat(labels)
+            evaluator = BaselineEvaluator(backbone, feats, labels)
+            trainer = Trainer(max_epochs=1, precision=32, enable_checkpointing=False, logger=False)
+            results = trainer.validate(evaluator, test_dataloaders)
+            log_metrics(results, test_flags)
+        baseline_eval()
+
 
         prompts = os.path.join(cache_dir, f"{args.dataset_identifier}-{args.n_shot}.npz")
         prompts = np.load(prompts)
