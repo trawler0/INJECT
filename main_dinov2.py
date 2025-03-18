@@ -24,7 +24,7 @@ def main():
     parser.add_argument("dinov2_model", type=str)
     parser.add_argument("n_shot", type=int)
     parser.add_argument("--epochs", type=int, default=10)
-    parser.add_argument("--batch-size", type=int, default=64)
+    parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--seed", type=int, default=-1)
     parser.add_argument("--cache-dir", default=CACHED_FEATURES, type=str)
     parser.add_argument("--root", default=default_root, type=str)
@@ -124,7 +124,7 @@ def main():
 
         print("Training model")
         model = INJECT(backbone=backbone, text_features=p, idxs=idxs, test_flags=test_flags)
-        train_loader = torch.utils.data.DataLoader(ds, batch_size=args.batch_size, num_workers=2, shuffle=True, drop_last=True, persistent_workers=True)
+        train_loader = torch.utils.data.DataLoader(ds, batch_size=min(args.batch_size, len(ds)), num_workers=2, shuffle=True, drop_last=True, persistent_workers=True)
         trainer = Trainer(max_epochs=int(args.epochs * args.epoch_multiplier), precision=32, enable_checkpointing=False, logger=False, check_val_every_n_epoch=args.val_frequency)
         trainer.fit(model, train_loader, val_loader)
         if args.test_ema:

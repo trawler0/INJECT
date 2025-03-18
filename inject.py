@@ -34,7 +34,7 @@ class OrthogonalLinear(nn.Module):
 
     def forward(self, input: torch.Tensor, inverse: bool = False):
         # Ensure skew-symmetry during the forward pass, this is a slight over-parameterization
-        A = self.param - self.param.T
+        A = (self.param - self.param.T)
         # when using inverse, harness that exp(-A) = exp(A)^-1
         if inverse:
             A = -A
@@ -76,7 +76,7 @@ class Rose(nn.Module):
         self.apply_se = apply_se
         self.apply_rotation = apply_rotation
 
-    def forward(self, x: torch.Tensor):
+    def forward(self, x: torch.Tensor, ratio=1):
         assert len(x.shape) == 2, "Input shape must be (B, D)"
         # rotate to model universal squeeze excitation
         if self.apply_rotation:
@@ -85,7 +85,7 @@ class Rose(nn.Module):
         # apply squeeze excitation
         if self.apply_se:
             logits = self.mlp(x)
-            sigma = self.sigmoid(logits)
+            sigma = self.sigmoid(logits * ratio)
             sigma = (1 - self.alpha) + self.alpha * sigma
             x = x * sigma
 
@@ -156,27 +156,25 @@ class INJECT(LightningModule):
         image_features = image_features.float()
         image_features = F.normalize(image_features, p=2, dim=-1)  # B x D
 
-        original_logits = image_features @ F.normalize(weights.mean(1), p=2, dim=-1).T  # B x N_class
+        # original_logits = image_features @ F.normalize(weights.mean(1), p=2, dim=-1).T  # B x N_class
 
-        image_features = self.se(image_features)
+        image_features = self.se(image_features, ratio=ratio)
         image_features = F.normalize(image_features, p=2, dim=-1)  # B x D
 
-        sims = weights @ image_features.T  # N_class x L x B
-        sims = sims.permute(2, 0, 1)  # B x N_class x L
-        sims = self._weighing(sims)
 
         if idx is not None:
             mask = (idx.view(-1, 1, 1) == self.idxs.unsqueeze(0)).float()
             alpha = self.alpha.unsqueeze(0) - 1e9 * mask
         else:
             alpha = self.alpha.unsqueeze(0)
-        t = torch.softmax(alpha, dim=-1)  # 1 x N_class x L
-        sims = sims * t  # B x N_class x L
+        t = torch.softmax(alpha, dim=-1) * ratio + (1 - ratio) * 1 / alpha.shape[-1]  # B x N_class x L
+        weights = weights.unsqueeze(0) * t.unsqueeze(-1)  # B x N_class x L x D
+        weights = F.normalize(weights.mean(2), p=2, dim=-1)  # B x N_class x D
+        logits = (image_features.unsqueeze(1) * weights).sum(-1)  # B x N_class
 
         logit_scale = torch.exp(self.logit_scale)
-        logits = sims.sum(dim=-1)   # B x N_class
-
-        logits = (ratio * logits + (1 - ratio) * original_logits) * logit_scale
+        logits = logits * logit_scale
+        # logits = (ratio * logits + (1 - ratio) * original_logits) * logit_scale
 
         return logits
 
@@ -295,10 +293,16 @@ class BaselineEvaluator(LightningModule):
         knn_acc = (logits.argmax(1) == y).float().mean()
         self.log("{}_knn_acc".format(flag), knn_acc, on_step=False, on_epoch=True, prog_bar=True, batch_size=image.shape[0])
 
-        target = F.one_hot(self.labels, num_classes=torch.max(self.labels) + 1).float().unsqueeze(1)
-        feats = self.feats.unsqueeze(-1)
+        target = F.one_hot(self.labels, num_classes=torch.max(self.labels) + 1).float()
+        """feats = self.feats.unsqueeze(-1)
+        print(feats.shape, target.shape, image_features.shape)
         proto = (target * feats)
+        print(proto.shape)
         proto = F.normalize(proto.sum(0), p=2, dim=1)
+        print(proto.shape)"""
+        feats = F.normalize(self.feats, p=2, dim=-1)
+        proto = torch.einsum("nd,nc->dc", feats, target)
+        proto = F.normalize(proto, p=2, dim=0)
         logits = image_features @ proto
         if flag == "imagenet-a":
             logits = logits[:, IMAGENET_A_IDX]
@@ -312,10 +316,10 @@ class BaselineEvaluator(LightningModule):
 
 if __name__ == "__main__":
     backbone = torch.hub.load('facebookresearch/dinov2', 'dinov2_vits14')
-    feats = torch.randn(1000, 384)
-    labels = torch.randint(0, 10, (1000,))
-    model = BaselineEvaluator(backbone, feats, labels)
-    x = torch.randn(32, 3, 224, 224)
-    y = torch.randint(0, 10, (32,))
-    model.validation_step((x, y), 0)
+    feats = torch.randn(16, 16, 384)
+    idxs = torch.randint(0, 16, (16, 16))
+    inject = INJECT(backbone, feats, idxs)
+    image = torch.randn(16, 3, 224, 224)
+    logits = inject(image)
+    print(logits)
 

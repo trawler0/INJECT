@@ -28,7 +28,7 @@ def main():
     parser.add_argument("templates", type=str)
     parser.add_argument("--use-cached-images", action="store_true", default=False)
     parser.add_argument("--epochs", type=int, default=10)
-    parser.add_argument("--batch-size", type=int, default=64)
+    parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--seed", type=int, default=-1)
     parser.add_argument("--cache-dir", default=CACHED_FEATURES, type=str)
     parser.add_argument("--root", default=default_root, type=str)
@@ -38,6 +38,7 @@ def main():
     parser.add_argument("--epoch-multiplier", type=float, default=1.)
     parser.add_argument("--return-best", action="store_true", default=False)
     parser.add_argument("--experiment", type=str, default=None)
+    parser.add_argument("--val-frequency", type=int, default=10)
 
     args = parser.parse_args()
 
@@ -97,14 +98,14 @@ def main():
                 test_dataset = CachedDataset(test_cached)
             else:
                 test_dataset = DATASETS.get(args.dataset_identifier)(args.root, test_flag, transform=backbone.preprocess)
-            test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=1024, num_workers=0)
+            test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=32, num_workers=0)
             test_dataloaders.append(test_dataloader)
 
         train_dataset = DATASETS.get(args.dataset_identifier)(args.root, "train", n_shot=args.n_shot, seed=args.seed, transform=train_transforms)
         train_dataset = IdxDataset(train_dataset)
 
-        val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=1024, num_workers=0)
-        train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, num_workers=8, shuffle=True, drop_last=True, persistent_workers=True)
+        val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=32, num_workers=0)
+        train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=min(args.batch_size, len(train_dataset)), num_workers=8, shuffle=True, drop_last=True, persistent_workers=True)
 
 
         print("Starting training on", args.dataset_identifier)
@@ -115,7 +116,8 @@ def main():
         else:
             callbacks = None
             enable_checkpointing = False
-        trainer = Trainer(max_epochs=int(args.epochs * args.epoch_multiplier), precision=32, enable_checkpointing=enable_checkpointing, logger=False, callbacks=callbacks)
+        print(args.epochs, args.epoch_multiplier)
+        trainer = Trainer(max_epochs=int(args.epochs * args.epoch_multiplier), precision=32, enable_checkpointing=enable_checkpointing, logger=False, callbacks=callbacks, check_val_every_n_epoch=args.val_frequency)
         trainer.fit(model, train_loader, val_loader)
 
         if args.return_best:

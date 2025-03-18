@@ -57,6 +57,22 @@ def get_images_clip(clip_model, n_aug, ds):
     idxs = np.stack(idxs)
     return embeddings, idxs
 
+class VisualPromptAugmentation:
+
+    def __init__(self, scale=(.4, 1.)):
+        self.flip = T.RandomHorizontalFlip()
+        self.scale = scale
+
+    def __call__(self, x):
+        H, W = x.size
+        scale = random.uniform(*self.scale)
+        new_H = int(H * scale)
+        new_W = int(W * scale)
+        x = x.resize((new_H, new_W))
+        x = self.flip(x)
+        return x
+
+
 @torch.no_grad()
 def get_prompts_dinov2(dinov2_model, n_aug, ds):
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -66,7 +82,7 @@ def get_prompts_dinov2(dinov2_model, n_aug, ds):
     embeddings = {j: [] for j in range(len(ds.classes))}
     idxs = {j: [] for j in range(len(ds.classes))}
     ds.transform = T.Compose([
-        DEFAULT_TRANSFORMS,
+        # VisualPromptAugmentation(),
         model.preprocess
     ])
     for j in tqdm(range(len(ds))):
