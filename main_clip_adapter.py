@@ -1,17 +1,17 @@
 import clip
-from inject import INJECT
+from model import Adapter
 from utils import Backbone, CachedDataset, log_metrics, DEFAULT_TRANSFORMS
 from pytorch_lightning import Trainer
 import mlflow
 import argparse
 import os
 import numpy as np
-from data import DATASETS
+from data import DATASETS, IdxDataset
 import torch
 from torchvision import transforms as T
 from pytorch_lightning.callbacks import ModelCheckpoint
 import tempfile
-from data import IdxDataset
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -26,19 +26,18 @@ def main():
     parser.add_argument("clip_model", type=str)
     parser.add_argument("n_shot", type=int)
     parser.add_argument("templates", type=str)
-    parser.add_argument("--use-cached-images", action="store_true", default=False)
     parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--batch-size", type=int, default=32)
-    parser.add_argument("--seed", type=int, default=-1)
+    parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--cache-dir", default=CACHED_FEATURES, type=str)
     parser.add_argument("--root", default=default_root, type=str)
-    parser.add_argument("--use-cached-data", default="True", type=str)
+    parser.add_argument("--use-cached-data", default="False", type=str)
     parser.add_argument("--test-ema", action="store_true", default=False)
     parser.add_argument("--save_weights", action="store_true", default=False)
     parser.add_argument("--epoch-multiplier", type=float, default=1.)
     parser.add_argument("--return-best", action="store_true", default=False)
     parser.add_argument("--experiment", type=str, default=None)
-    parser.add_argument("--val-frequency", type=int, default=10)
+    parser.add_argument("--val-frequency", type=int, default=40)
 
     args = parser.parse_args()
 
@@ -68,18 +67,13 @@ def main():
         prompts = np.load(prompts)
         N_class, L, D = prompts.shape
         idxs = -np.ones((N_class, L))
-        if args.use_cached_images:
-            images = os.path.join(cache_dir, f"{args.dataset_identifier}-features.npz")
-            images, idxs_images = np.load(images)["emb"], np.load(images)["idxs"]
-            prompts = np.concatenate([prompts, images], axis=1)
-            idxs = np.concatenate([idxs, idxs_images], axis=1)
 
         val_cached = os.path.join(cache_dir, f"{args.dataset_identifier}-val-features.npz")
 
         backbone = Backbone(args.clip_model)
         test_flags = ["val", "imagenet-r", "imagenet-a", "v2", "sketch"] if args.dataset_identifier == "imagenet" else ["val", "test"]
 
-        model = INJECT(backbone=backbone, text_features=prompts, idxs=idxs, test_flags=test_flags)
+        model = Adapter(reduction=4, backbone=backbone, text_features=prompts, idxs=idxs, test_flags=test_flags)
 
         train_transforms = T.Compose([
             DEFAULT_TRANSFORMS,
@@ -121,7 +115,7 @@ def main():
         trainer.fit(model, train_loader, val_loader)
 
         if args.return_best:
-            model = INJECT.load_from_checkpoint(checkpoint_callback.best_model_path, backbone=backbone, text_features=prompts, test_flags=test_flags)
+            model = CLIPAdapter.load_from_checkpoint(checkpoint_callback.best_model_path, backbone=backbone, text_features=prompts, test_flags=test_flags)
         # delete best model, no need to save for benchmarking
         if args.return_best and os.path.exists(checkpoint_callback.best_model_path):
             os.remove(checkpoint_callback.best_model_path)

@@ -1,4 +1,4 @@
-from inject import INJECT, BaselineEvaluator
+from model import Adapter,  BaselineEvaluator, Soup
 from utils import Backbone, CachedDataset, log_metrics, DEFAULT_TRANSFORMS
 from pytorch_lightning import Trainer
 import mlflow
@@ -25,7 +25,7 @@ def main():
     parser.add_argument("n_shot", type=int)
     parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--batch-size", type=int, default=32)
-    parser.add_argument("--seed", type=int, default=-1)
+    parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--cache-dir", default=CACHED_FEATURES, type=str)
     parser.add_argument("--root", default=default_root, type=str)
     parser.add_argument("--use-cached-data", action="store_false", default=True)
@@ -33,8 +33,10 @@ def main():
     parser.add_argument("--save_weights", action="store_true", default=False)
     parser.add_argument("--epoch-multiplier", type=float, default=1.)
     parser.add_argument("--lora-strategy", type=str, default="none")
-    parser.add_argument("--val-frequency", type=int, default=10)
+    parser.add_argument("--val-frequency", type=int, default=40)
     parser.add_argument("--experiment", type=str, default=None)
+    parser.add_argument("--n-runs", type=int, default=10)
+    parser.add_argument("--greedy", action="store_true", default=False)
 
     args = parser.parse_args()
 
@@ -50,9 +52,9 @@ def main():
     run_name = f"{args.dataset_identifier}-{args.dinov2_model}-{args.n_shot}"
     with mlflow.start_run(run_name=run_name, experiment_id=experiment_id):
         torch.autograd.set_detect_anomaly(False)
-        torch.manual_seed(42)
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
+        np.random.seed(args.seed)
 
         mlflow.log_params(vars(args))
         mlflow.pytorch.autolog(log_models=False)
@@ -91,6 +93,10 @@ def main():
             test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=32, num_workers=0)
             test_dataloaders.append(test_dataloader)
 
+        prompts = os.path.join(cache_dir, f"{args.dataset_identifier}-{args.n_shot}.npz")
+        prompts = np.load(prompts)
+        p, idxs = prompts["emb"], prompts["idxs"]
+
         def baseline_eval():
             feats = []
             labels = []
@@ -110,33 +116,65 @@ def main():
             log_metrics(results, test_flags)
         baseline_eval()
 
+        models = []
+        scores = []
+        for j in range(args.n_runs):
+            torch.manual_seed(j)
+            reduction = np.random.randint(2, 10)
+            lr = np.random.choice([2e-3, 1e-3, 5e-4])
+            weight_decay = np.random.choice([1e-3, 1e-2, 5e-2])
+            mlflow.log_param(f"reduction_{j}", reduction)
+            mlflow.log_param(f"lr_{j}", lr)
+            mlflow.log_param(f"weight_decay_{j}", weight_decay)
+            model = Adapter(reduction=reduction, backbone=backbone, text_features=p, idxs=idxs,
+                            test_flags=test_flags, lr=lr, weight_decay=weight_decay)
 
-        prompts = os.path.join(cache_dir, f"{args.dataset_identifier}-{args.n_shot}.npz")
-        prompts = np.load(prompts)
-        p, idxs = prompts["emb"], prompts["idxs"]
-        ds = DATASETS.get(args.dataset_identifier)(args.root, "train", n_shot=args.n_shot, transform=train_transforms, seed=args.seed)
-        ds = IdxDataset(ds)
+            ds = DATASETS.get(args.dataset_identifier)(args.root, "train", n_shot=args.n_shot, transform=train_transforms, seed=args.seed)
+            ds = IdxDataset(ds)
 
-        # need to use leave use 50% as prompts and 50% as training samples, switching roles and ensembling improves performance
+            backbone = Backbone(args.dinov2_model)
+            backbone.model = lora_dinov2(backbone.model, 10, 8, strategy=args.lora_strategy)
 
-        backbone = Backbone(args.dinov2_model)
-        backbone.model = lora_dinov2(backbone.model, 10, 8, strategy=args.lora_strategy)
+            train_loader = torch.utils.data.DataLoader(ds, batch_size=min(args.batch_size, len(ds)), num_workers=2, shuffle=True, drop_last=True, persistent_workers=True)
+            trainer = Trainer(max_epochs=int(args.epochs * args.epoch_multiplier), precision=32, enable_checkpointing=False, logger=False, check_val_every_n_epoch=args.val_frequency)
+            trainer.fit(model, train_loader, val_loader)
+            if args.test_ema:
+                model = model.ema
 
-        print("Training model")
-        model = INJECT(backbone=backbone, text_features=p, idxs=idxs, test_flags=test_flags)
-        train_loader = torch.utils.data.DataLoader(ds, batch_size=min(args.batch_size, len(ds)), num_workers=2, shuffle=True, drop_last=True, persistent_workers=True)
-        trainer = Trainer(max_epochs=int(args.epochs * args.epoch_multiplier), precision=32, enable_checkpointing=False, logger=False, check_val_every_n_epoch=args.val_frequency)
-        trainer.fit(model, train_loader, val_loader)
-        if args.test_ema:
-            model = model.ema
-
-        results = trainer.validate(model, test_dataloaders)
-
+            results = trainer.validate(model, test_dataloaders)
+            for i in range(len(results)):
+                results[i] = {f"{k}_{j}": v for k, v in results[i].items()}
+            score = results[0][f"val_acc_1/dataloader_idx_0_{j}"]
+            scores.append(score)
+            log_metrics(results, test_flags)
+            if args.save_weights:
+                mlflow.pytorch.log_model(model, "models")
+            models.append(model)
+        ensemble = Soup(models, test_flags=test_flags)
+        trainer = Trainer()
+        results = trainer.validate(ensemble, test_dataloaders)
         log_metrics(results, test_flags)
-        if args.save_weights:
-            mlflow.pytorch.log_model(model, "models")
+        if args.greedy:
+            idx = np.argsort(Soup)
+            models = [models[i] for i in reversed(idx)]
+            scores = [Soup[i] for i in reversed(idx)]
+            current_soup = [models[0]]
+            current_score = 0.
+            for j in range(0, len(models)):
+                ensemble = Soup(models[:j+1], flag="search", test_flags=test_flags)
+                trainer = Trainer(logger=False)
+                results = trainer.validate(ensemble, test_dataloaders)
+                all_scores = [results[0][f"acc_{thresh}_search/dataloader_idx_0"] for thresh in ["0.1", "0.2", "0.3", "0.4", "0.5", "0.6", "0.7", "0.8", "0.9", "1"]]
+                score = np.max(all_scores)
+                if score > current_score:
+                    current_score = score
+                    current_soup.append(models[j])
+
+            ensemble = Soup(current_soup, flag="greedy", test_flags=test_flags)
+            trainer = Trainer(logger=False)
+            results = trainer.validate(ensemble, test_dataloaders)
+            log_metrics(results, test_flags)
 
 
 if __name__ == "__main__":
     main()
-

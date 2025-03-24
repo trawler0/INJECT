@@ -27,53 +27,6 @@ def get_prompts_clip(clip_model, templates, classes):
     return embeddings
 
 @torch.no_grad()
-def get_images_clip(clip_model, n_aug, ds):
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    model = Backbone(clip_model)
-    model.to(device)
-    model.eval()
-    embeddings = {j: [] for j in range(len(ds.classes))}
-    idxs = {j: [] for j in range(len(ds.classes))}
-    ds.transform = T.Compose([
-        DEFAULT_TRANSFORMS,
-        model.preprocess
-    ])
-    for j in tqdm(range(len(ds))):
-        _, y = ds[j]
-        x = []
-        for _ in range(n_aug):
-            im = ds[j][0]
-            x.append(im)
-        x = torch.stack(x)
-        x = x.to(device)
-        image_features = model(x)
-        image_features = torch.nn.functional.normalize(image_features, p=2, dim=-1)
-        embeddings[y].append(image_features.cpu().numpy())
-        idx = np.ones(len(image_features)) * j
-        idxs[y].append(idx)
-    embeddings = [np.concatenate(embeddings[j]) for j in range(len(ds.classes))]
-    idxs = [np.concatenate(idxs[j]) for j in range(len(ds.classes))]
-    embeddings = np.stack(embeddings)
-    idxs = np.stack(idxs)
-    return embeddings, idxs
-
-class VisualPromptAugmentation:
-
-    def __init__(self, scale=(.4, 1.)):
-        self.flip = T.RandomHorizontalFlip()
-        self.scale = scale
-
-    def __call__(self, x):
-        H, W = x.size
-        scale = random.uniform(*self.scale)
-        new_H = int(H * scale)
-        new_W = int(W * scale)
-        x = x.resize((new_H, new_W))
-        x = self.flip(x)
-        return x
-
-
-@torch.no_grad()
 def get_prompts_dinov2(dinov2_model, n_aug, ds):
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model = Backbone(dinov2_model)
@@ -82,7 +35,7 @@ def get_prompts_dinov2(dinov2_model, n_aug, ds):
     embeddings = {j: [] for j in range(len(ds.classes))}
     idxs = {j: [] for j in range(len(ds.classes))}
     ds.transform = T.Compose([
-        # VisualPromptAugmentation(),
+        # DEFAULT_TRANSFORMS,
         model.preprocess
     ])
     for j in tqdm(range(len(ds))):
@@ -183,11 +136,6 @@ if __name__ == "__main__":
             classes = [cls for _, cls in ds.idx_to_class.items()]
             embeddings = get_prompts_clip(args.model, templates, classes)
             np.save(file_name, embeddings)
-
-            file_name = os.path.join(cache_dir, f"{args.dataset_identifier}-features.npz")
-            ds = DATASETS.get(args.dataset_identifier)(args.root, "train", n_shot=args.n_shot)
-            emb, idxs = get_images_clip(args.model, args.n_augs, ds)
-            np.savez(file_name, emb=emb, idxs=idxs)
 
     if args.cache_dataset:
         assert args.split is not None

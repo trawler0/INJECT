@@ -1,4 +1,4 @@
-from inject import Prober
+from model import Prober
 from utils import Backbone, CachedDataset, log_metrics, DEFAULT_TRANSFORMS
 from pytorch_lightning import Trainer
 import mlflow

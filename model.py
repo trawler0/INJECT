@@ -12,176 +12,90 @@ from templates import IMAGENET_A_IDX, IMAGENET_R_IDX
 import random
 
 DEFAULT_LR = 1e-3
-DEFAULT_LR_BACKOBONE = 0.
 DEFAULT_EMA_DECAY = 0.997
 DEFAULT_SQUEEZE_RATIO = 0.25
 DEFAULT_ALPHA = 1.0
 DEFAULT_LABEL_SMOOTHING = 0.02
 DEFAULT_LOGIT_SCALE = 10.
-DEFAULT_T = 10.  # this ends up in the identity function
 
 
-class OrthogonalLinear(nn.Module):
-    def __init__(self, features: int):
-        """
-        Uses the exponential map of the Lie algebra of skew-symmetric matrices into the Lie group of orthogonal matrices
-        to create an orthogonal linear layer
-        :param features: dimension of the embedding space
-        """
-        super(OrthogonalLinear, self).__init__()
-        self.features = features
-        self.param = nn.Parameter(torch.rand(features, features))
-
-    def forward(self, input: torch.Tensor, inverse: bool = False):
-        # Ensure skew-symmetry during the forward pass, this is a slight over-parameterization
-        A = (self.param - self.param.T)
-        # when using inverse, harness that exp(-A) = exp(A)^-1
-        if inverse:
-            A = -A
-        weight_orthogonal = torch.matrix_exp(A)  # this is not an entry-wise exponential, google matrix exponential as reference
-        return F.linear(input, weight_orthogonal)
-
-
-class Rose(nn.Module):
-
+# reimplementation
+class Adapter(LightningModule):
     def __init__(
-            self,
-            features: int,
-            alpha: float = DEFAULT_ALPHA,
-            squeeze_ratio: float = DEFAULT_SQUEEZE_RATIO,
-            apply_se=True,
-            apply_rotation=True
+        self,
+        reduction: int,
+        backbone: nn.Module,
+        text_features: Union[np.ndarray, torch.Tensor],
+        idxs: Union[np.ndarray, torch.Tensor],
+        label_smoothing: float = DEFAULT_LABEL_SMOOTHING,
+        lr: float = DEFAULT_LR,
+        weight_decay: float = 0.01,
+        ema_decay: float = DEFAULT_EMA_DECAY,
+        logit_scale: float = DEFAULT_LOGIT_SCALE,
+        test_flags: List[str] = None,
     ):
-        """
-        Rose module, first rotates the embedding space, then applies squeeze excitation, and finally rotates back
-        :param features: dimension of the input features
-        :param alpha: interpolation parameter between identity and the learned rotation
-        :param squeeze_ratio: ratio of the squeeze excitation MLP hidden layer size to the input size
-        :param apply_se: whether to apply squeeze excitation (will act as identity if False)
-        :param apply_rotation: whether to apply the rotation (will act as squeeze-excitation if False)
-        """
-        super(Rose, self).__init__()
-        self.ol = OrthogonalLinear(features)
-
-        # can be used to interpolate between identity and the learned layer
-        self.register_buffer('alpha', torch.tensor(alpha))
-
-        self.mlp = nn.Sequential(
-            nn.Linear(features, int(features * squeeze_ratio)),
-            nn.ReLU(),
-            nn.Linear(int(features * squeeze_ratio), features),
-        )
-        self.sigmoid = nn.Sigmoid()
-
-        self.apply_se = apply_se
-        self.apply_rotation = apply_rotation
-
-    def forward(self, x: torch.Tensor, ratio=1):
-        assert len(x.shape) == 2, "Input shape must be (B, D)"
-        # rotate to model universal squeeze excitation
-        if self.apply_rotation:
-            x = self.ol(x)
-
-        # apply squeeze excitation
-        if self.apply_se:
-            logits = self.mlp(x)
-            sigma = self.sigmoid(logits * ratio)
-            sigma = (1 - self.alpha) + self.alpha * sigma
-            x = x * sigma
-
-        # rotate back into original alignment
-        if self.apply_rotation:
-            x = self.ol(x, inverse=True)
-        return x
-
-
-class INJECT(LightningModule):
-    def __init__(
-            self,
-            backbone: nn.Module,
-            text_features: Union[np.ndarray, torch.Tensor],
-            idxs,
-            label_smoothing: float = DEFAULT_LABEL_SMOOTHING,
-            lr: float = DEFAULT_LR,
-            lr_backbone: float = DEFAULT_LR_BACKOBONE,
-            ema_decay: float = DEFAULT_EMA_DECAY,
-            logit_scale: float = DEFAULT_LOGIT_SCALE,
-            test_flags: List[str] = None,
-            T: float = DEFAULT_T
-    ):
-        """
-        INJECT model, injects new knowledge into the baseline heuristic of comparing inputs with prompts
-        :param backbone: a CLIP or DINOv2 model
-        :param text_features: precomputed embeddings of the prompts N_class x L x D (L is the number of prompts for each class)
-        :param label_smoothing: label smoothing during training
-        :param lr: learning rate
-        :param ema_decay: exponential moving average decay, can improve robustness
-        :param logit_scale: the learnable logit scale initialization
-        :param test_flags: used if imagenet is the dataset, to evaluate on imagenet-a and imagenet-r
-        :param T: a rescaling parameter for experimental purposes, does not seem to be useful
-        """
         super().__init__()
         self.backbone = backbone
         text_features = torch.tensor(text_features).float()
-        idxs = torch.tensor(idxs).long()
         self.register_buffer("text_features", text_features)
-        self.register_buffer("idxs", idxs)
+        self.register_buffer("idxs", torch.tensor(idxs))
 
         N_class, L, D = text_features.shape
 
-        self.se = Rose(D)
+        self.ln1 = nn.LayerNorm(D)
+        self.ln2 = nn.LayerNorm(D)
 
-        self.alpha = nn.Parameter(torch.zeros(N_class, L))
+        self.adapter_layer = nn.Sequential(
+            nn.Linear(D, D//reduction),
+            nn.GELU(),
+            nn.Linear(D//reduction, D),
+        )
+
         self.label_smoothing = label_smoothing
         self.lr = lr
-        self.lr_backbone = lr_backbone
+        self.weight_decay = weight_decay
 
         self.logit_scale = nn.Parameter(torch.tensor(math.log(logit_scale)))
         self.test_flags = test_flags
 
         self.ema = deepcopy(self)
         self.ema_decay = ema_decay
-        self.T = T
 
-    def _weighing(self, sims):
-        if self.training:
-            return sims
-        else:
-            return self.T * (torch.exp(sims / self.T) - 1)  # renormalization
+    def embeddings(self, image_features, ratio=1.):
+        image_features = image_features.float()
+        image_features = self.ln1(image_features)
 
-    def forward_inject(self, image_features, idx=None, ratio=1.):
+        image_features = image_features + ratio * self.ln2(self.adapter_layer(image_features))
+        image_features = F.normalize(image_features, p=2, dim=-1)  # B x D
+
+        return image_features
+
+    def forward_clip_adapter(self, image_features, ratio=1., idx=None):
+
+        image_features = self.embeddings(image_features, ratio=ratio)
+
         weights = self.text_features  # N_class x L x D
         weights = F.normalize(weights, p=2, dim=-1)
-
-        image_features = image_features.float()
-        image_features = F.normalize(image_features, p=2, dim=-1)  # B x D
-
-        # original_logits = image_features @ F.normalize(weights.mean(1), p=2, dim=-1).T  # B x N_class
-
-        image_features = self.se(image_features, ratio=ratio)
-        image_features = F.normalize(image_features, p=2, dim=-1)  # B x D
-
-
         if idx is not None:
-            mask = (idx.view(-1, 1, 1) == self.idxs.unsqueeze(0)).float()
-            alpha = self.alpha.unsqueeze(0) - 1e9 * mask
+            mask = (idx.view(-1, 1, 1) != self.idxs.unsqueeze(0)).float()  # B x N_class x L
+            mask = mask.unsqueeze(-1)  # B x N_class x L x 1
+            weights = (weights.unsqueeze(0) * mask).sum(2)  # B x N_class x D
         else:
-            alpha = self.alpha.unsqueeze(0)
-        t = torch.softmax(alpha, dim=-1) * ratio + (1 - ratio) * 1 / alpha.shape[-1]  # B x N_class x L
-        weights = weights.unsqueeze(0) * t.unsqueeze(-1)  # B x N_class x L x D
-        weights = F.normalize(weights.mean(2), p=2, dim=-1)  # B x N_class x D
-        logits = (image_features.unsqueeze(1) * weights).sum(-1)  # B x N_class
+            weights = weights.unsqueeze(0).expand(image_features.shape[0], -1, -1, -1)  # B x N_class x L x D
+            weights = weights.sum(2)  # B x N_class x D
 
+        weights = F.normalize(weights, p=2, dim=-1)  # B x N_class x D
+
+        logits = torch.einsum("bd,bnd->bn", image_features, weights)  # B x N_class
         logit_scale = torch.exp(self.logit_scale)
         logits = logits * logit_scale
-        # logits = (ratio * logits + (1 - ratio) * original_logits) * logit_scale
 
         return logits
 
 
     def forward(self, image, ratio=.9):
         image_features = self.backbone(image)
-        return self.forward_inject(image_features, ratio=ratio)
+        return self.forward_clip_adapter(image_features, ratio=ratio)
 
     def training_step(self, batch, batch_idx):
         sleep(0.005)  # if using encoded features, need this to prevent computer from freezing
@@ -193,7 +107,7 @@ class INJECT(LightningModule):
                 image_features = self.backbone(image_features)
 
 
-        logits = self.forward_inject(image_features, idx)
+        logits = self.forward_clip_adapter(image_features, idx=idx)
         loss = F.cross_entropy(logits, target, label_smoothing=self.label_smoothing)
         acc = (logits.argmax(1) == target).float().mean() * 100
 
@@ -223,7 +137,7 @@ class INJECT(LightningModule):
             image_features = image
         for ratio in [0, .1, .2, .3, .4, .5, .6, .7, .8, .9, 1]:
             flag = "val" if self.test_flags is None else self.test_flags[dataloader_idx]
-            logits = self.forward_inject(image_features, ratio=ratio)
+            logits = self.forward_clip_adapter(image_features, ratio=ratio)
             if flag == "imagenet-a":
                 logits = logits[:, IMAGENET_A_IDX]
             if flag == "imagenet-r":
@@ -235,12 +149,13 @@ class INJECT(LightningModule):
 
     def configure_optimizers(self):
         params = [
-            {"params": self.backbone.parameters(), "lr": self.lr_backbone},
-            {"params": self.se.parameters()},
-            {"params": self.alpha, "lr": self.lr * 10},
-            {"params": self.logit_scale, "lr": self.lr * 10}
+            {"params": self.adapter_layer.parameters()},
+            {"params": self.logit_scale, "lr": self.lr * 10},
+            {"params": self.ln1.parameters(), "weight_decay": 0},
+            {"params": self.ln2.parameters(), "weight_decay": 0}
         ]
-        optimizer = torch.optim.AdamW(params, lr=self.lr)
+
+        optimizer = torch.optim.AdamW(params, lr=self.lr, weight_decay=self.weight_decay)
         total_steps = self.trainer.estimated_stepping_batches
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, total_steps)
         return {
@@ -250,6 +165,55 @@ class INJECT(LightningModule):
                 "interval": "step",
             },
         }
+
+class Soup(LightningModule):
+
+    def __init__(self, models: List[Adapter], test_flags=None, flag="uniform"):
+        super().__init__()
+        self.models = nn.ModuleList(models)
+        self.test_flags = test_flags
+        self.flag = flag
+
+    def forward_clip_adapter(self, image_features, ratio=1.):
+
+        x = []
+        for model in self.models:
+            x.append(model.embeddings(image_features, ratio=ratio))
+        image_features = torch.stack(x, dim=0).mean(0)
+        image_features = F.normalize(image_features, p=2, dim=-1)
+
+        weights = self.models[0].text_features  # N_class x L x D
+        weights = F.normalize(weights, p=2, dim=-1)
+        weights = F.normalize(weights.mean(1), p=2, dim=-1)  # N_class x D
+
+        logits = image_features @ weights.T * 50  # B x N_class
+
+        return logits
+
+
+    def forward(self, image, ratio=.9):
+        image_features = self.backbone(image)
+        return self.forward_clip_adapter(image_features, ratio=ratio)
+
+    def validation_step(self, batch, batch_idx, dataloader_idx=0):
+        if batch_idx == 0:
+            print()
+        image, target = batch
+        if len(image.shape) == 4:  # check if features are already encoded
+            image_features = self.models[0].backbone(image)
+        else:
+            image_features = image
+        for ratio in [0, .1, .2, .3, .4, .5, .6, .7, .8, .9, 1]:
+            flag = "val" if self.test_flags is None else self.test_flags[dataloader_idx]
+            logits = self.forward_clip_adapter(image_features, ratio=ratio)
+            if flag == "imagenet-a":
+                logits = logits[:, IMAGENET_A_IDX]
+            if flag == "imagenet-r":
+                logits = logits[:, IMAGENET_R_IDX]
+            acc = (logits.argmax(1) == target).float().mean()
+            self.log(fr"acc_{ratio}_{self.flag}", acc, on_epoch=True, prog_bar=True, on_step=False, batch_size=image.shape[0])
+
+        return acc
 
 
 class BaselineEvaluator(LightningModule):
@@ -291,7 +255,7 @@ class BaselineEvaluator(LightningModule):
         if flag == "imagenet-r":
             logits = logits[:, IMAGENET_R_IDX]
         knn_acc = (logits.argmax(1) == y).float().mean()
-        self.log("{}_knn_acc".format(flag), knn_acc, on_step=False, on_epoch=True, prog_bar=True, batch_size=image.shape[0])
+        self.log("knn_acc", knn_acc, on_step=False, on_epoch=True, prog_bar=True, batch_size=image.shape[0])
 
         target = F.one_hot(self.labels, num_classes=torch.max(self.labels) + 1).float()
         """feats = self.feats.unsqueeze(-1)
@@ -309,7 +273,7 @@ class BaselineEvaluator(LightningModule):
         if flag == "imagenet-r":
             logits = logits[:, IMAGENET_R_IDX]
         proto_acc = (logits.argmax(1) == y).float().mean()
-        self.log("{}_proto_acc".format(flag), proto_acc, on_step=False, on_epoch=True, prog_bar=True, batch_size=image.shape[0])
+        self.log("proto_acc", proto_acc, on_step=False, on_epoch=True, prog_bar=True, batch_size=image.shape[0])
 
 
 
