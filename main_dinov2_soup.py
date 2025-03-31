@@ -147,7 +147,7 @@ def main():
 
             results = trainer.validate(model, test_dataloaders)
             for i in range(len(results)):
-                results[i] = {f"{k}_{j}".replace("/", ""): v for k, v in results[i].items()}
+                results[i] = {f"{k}_{j}".replace("/", "-"): v for k, v in results[i].items()}
             log_metrics(results, test_flags)
 
         if args.greedy:
@@ -155,10 +155,12 @@ def main():
             scores.append(score)
             if args.save_weights:
                 mlflow.pytorch.log_model(model, "models")
-            models.append(model)
+        models.append(model)
         ensemble = Soup(models, test_flags=test_flags)
         trainer = Trainer()
         results = trainer.validate(ensemble, test_dataloaders)
+        for i in range(len(results)):
+            results[i] = {k.replace("/", "-"): v for k, v in results[i].items()}
         log_metrics(results, test_flags)
         if args.greedy:
             idx = np.argsort(Soup)
