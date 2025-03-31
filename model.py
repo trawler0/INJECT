@@ -42,9 +42,6 @@ class Adapter(LightningModule):
 
         N_class, L, D = text_features.shape
 
-        self.ln1 = nn.LayerNorm(D)
-        self.ln2 = nn.LayerNorm(D)
-
         self.adapter_layer = nn.Sequential(
             nn.Linear(D, D//reduction),
             nn.GELU(),
@@ -63,9 +60,9 @@ class Adapter(LightningModule):
 
     def embeddings(self, image_features, ratio=1.):
         image_features = image_features.float()
-        image_features = self.ln1(image_features)
+        image_features = F.normalize(image_features, p=2, dim=-1)  # B x D
 
-        image_features = image_features + ratio * self.ln2(self.adapter_layer(image_features))
+        image_features = image_features + ratio * self.adapter_layer(image_features)
         image_features = F.normalize(image_features, p=2, dim=-1)  # B x D
 
         return image_features
@@ -115,8 +112,6 @@ class Adapter(LightningModule):
         self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True, batch_size=image_features.shape[0])
         self.log("train_acc", acc, on_step=False, on_epoch=True, prog_bar=True, batch_size=image_features.shape[0])
 
-
-
         estd = self.ema.state_dict()
         mstd = self.state_dict()
         for k, v in self.ema.state_dict().items():
@@ -150,9 +145,7 @@ class Adapter(LightningModule):
     def configure_optimizers(self):
         params = [
             {"params": self.adapter_layer.parameters()},
-            {"params": self.logit_scale, "lr": self.lr * 10},
-            {"params": self.ln1.parameters(), "weight_decay": 0},
-            {"params": self.ln2.parameters(), "weight_decay": 0}
+            {"params": self.logit_scale, "lr": self.lr * 10}
         ]
 
         optimizer = torch.optim.AdamW(params, lr=self.lr, weight_decay=self.weight_decay)

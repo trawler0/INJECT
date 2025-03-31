@@ -133,10 +133,10 @@ def main():
                 model = model.ema
             results = trainer.validate(model, test_dataloaders)
             for i in range(len(results)):
-                results[i] = {f"{k}_{j}": v for k, v in results[i].items()}
-            score = results[0][f"val_acc_1/dataloader_idx_0_{j}"]
-            scores.append(score)
-            log_metrics(results, test_flags)
+                results[i] = {f"{k}_{j}".replace("/", ""): v for k, v in results[i].items()}
+            if args.greedy:
+                score = results[0][f"val_acc_1-dataloader_idx_0_{j}"]
+                scores.append(score)
             if args.save_weights:
                 mlflow.pytorch.log_model(model, "models")
             models.append(model)
@@ -154,7 +154,7 @@ def main():
                 ensemble = Soup(models[:j+1], flag="search", test_flags=test_flags)
                 trainer = Trainer(logger=False)
                 results = trainer.validate(ensemble, test_dataloaders)
-                all_scores = [results[0][f"acc_{thresh}_search/dataloader_idx_0"] for thresh in ["0.1", "0.2", "0.3", "0.4", "0.5", "0.6", "0.7", "0.8", "0.9", "1"]]
+                all_scores = [results[0][f"acc_{thresh}_search-dataloader_idx_0"] for thresh in ["0.1", "0.2", "0.3", "0.4", "0.5", "0.6", "0.7", "0.8", "0.9", "1"]]
                 score = np.max(all_scores)
                 if score > current_score:
                     current_score = score
