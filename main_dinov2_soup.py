@@ -149,13 +149,13 @@ def main():
             for i in range(len(results)):
                 results[i] = {f"{k}_{j}".replace("/", "-"): v for k, v in results[i].items()}
             log_metrics(results, test_flags)
-
-        if args.greedy:
-            score = results[0][f"val_acc_1-dataloader_idx_0_{j}"]
-            scores.append(score)
+            models.append(model)
+            if args.greedy:
+                score = results[0][f"val_acc_1-dataloader_idx_0_{j}"]
+                scores.append(score)
             if args.save_weights:
                 mlflow.pytorch.log_model(model, "models")
-        models.append(model)
+
         ensemble = Soup(models, test_flags=test_flags)
         trainer = Trainer()
         results = trainer.validate(ensemble, test_dataloaders)

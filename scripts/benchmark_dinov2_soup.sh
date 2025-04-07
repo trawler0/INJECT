@@ -38,8 +38,8 @@ if [ "$dataset" == "oxford_pets" ]; then
     python main_dinov2_soup.py oxford_pets "$dinov2_model" "$n_shots"  --epochs 80 --epoch-multiplier "$epoch_multiplier" --experiment "$experiment" --n-runs "$n_runs"
     exit
 fi
-if [ "$dataset" == "stanford_cars" ]; then
-    python main_dinov2_soup.py stanford_cars "$dinov2_model" "$n_shots" --epochs 80 --epoch-multiplier "$epoch_multiplier" --experiment "$experiment" --n-runs "$n_runs"
+if [ "$dataset" == "standford_cars" ]; then
+    python main_dinov2_soup.py standford_cars "$dinov2_model" "$n_shots" --epochs 40 --epoch-multiplier "$epoch_multiplier" --experiment "$experiment" --n-runs "$n_runs"
     exit
 fi
 if [ "$dataset" == "ucf101" ]; then

@@ -38,8 +38,8 @@ if [ "$dataset" == "oxford_pets" ]; then
     python main_clip_soup.py "oxford_pets" "$clip_model" "$n_shots" AUGMENTED_OXFORD_PETS_TEMPLATES  --epochs 40 --epoch-multiplier "$epoch_multiplier" --experiment "$experiment" --n-runs "$n_runs"
     exit
 fi
-if [ "$dataset" == "stanford_cars" ]; then
-    python main_clip_soup.py "stanford_cars" "$clip_model" "$n_shots" AUGMENTED_STANDFORD_CARS_TEMPLATES --epochs 40 --epoch-multiplier "$epoch_multiplier" --experiment "$experiment" --n-runs "$n_runs"
+if [ "$dataset" == "standford_cars" ]; then
+    python main_clip_soup.py "standford_cars" "$clip_model" "$n_shots" AUGMENTED_STANDFORD_CARS_TEMPLATES --epochs 40 --epoch-multiplier "$epoch_multiplier" --experiment "$experiment" --n-runs "$n_runs"
     exit
 fi
 if [ "$dataset" == "ucf101" ]; then

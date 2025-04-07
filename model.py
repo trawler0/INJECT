@@ -224,6 +224,7 @@ class BaselineEvaluator(LightningModule):
     def training_step(self, *args: Any, **kwargs: Any) -> STEP_OUTPUT:
         raise NotImplementedError("This model is only for evaluation")
 
+    @torch.no_grad()
     def validation_step(self, batch, batch_idx, dataloader_idx=0):
         image, y = batch
         if len(image.shape) == 4:
