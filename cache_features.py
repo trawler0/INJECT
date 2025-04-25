@@ -65,7 +65,8 @@ def get_prompts_dinov2(dinov2_model, n_aug, ds):
     idxs = np.stack(idxs)
     return embeddings, idxs
 
-@torch.no_grad()
+@torch.cuda.amp.autocast()
+@torch.inference_mode()
 def cache_dataset(file_name, model, dataset):
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model = Backbone(model)

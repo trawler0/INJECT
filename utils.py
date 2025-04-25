@@ -26,7 +26,7 @@ IMAGENET_MEAN = (0.485, 0.456, 0.406)
 IMAGENET_STD = (0.229, 0.224, 0.225)
 
 class Backbone(nn.Module):
-    def __init__(self, name, size=DEFAULT_IMAGE_SIZE):
+    def __init__(self, name, size=DEFAULT_IMAGE_SIZE, force_amp=True):
         super().__init__()
         if name.startswith("dinov2"):
             self.model_type = "dinov2"
@@ -36,19 +36,29 @@ class Backbone(nn.Module):
                 T.ToTensor(),
                 T.Normalize(IMAGENET_MEAN, IMAGENET_STD)  # default imagenet values, these are actually used in DINOv2
             ])
+            self.force_amp = force_amp
         else:
             self.model_type = "clip"
             self.model, self.preprocess = clip.load(name)
             self.model = self.model.float()
+            self.force_amp = force_amp
 
     def forward(self, x):
-        if self.model_type == "dinov2":
-            x = self.model.forward_features(x)
-            patches = x["x_norm_patchtokens"]
-            x = x["x_norm_clstoken"]
-            return x
+        if self.force_amp:
+            with torch.autocast("cuda"):
+                if self.model_type == "dinov2":
+                    x = self.model.forward_features(x)
+                    x = x["x_norm_clstoken"]
+                    return x
+                else:
+                    return self._clip_transformer(x)
         else:
-            return self._clip_transformer(x)
+            if self.model_type == "dinov2":
+                x = self.model.forward_features(x)
+                x = x["x_norm_clstoken"]
+                return x
+            else:
+                return self._clip_transformer(x)
 
     def _clip_transformer(self, x):
         x = self.model.visual.conv1(x)  # shape = [*, width, grid, grid]

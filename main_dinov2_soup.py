@@ -37,6 +37,7 @@ def main():
     parser.add_argument("--experiment", type=str, default=None)
     parser.add_argument("--n-runs", type=int, default=10)
     parser.add_argument("--greedy", action="store_true", default=False)
+    parser.add_argument("--save", default=None, type=str)
 
     args = parser.parse_args()
 
@@ -157,11 +158,15 @@ def main():
                 mlflow.pytorch.log_model(model, "models")
 
         ensemble = Soup(models, test_flags=test_flags)
+        if args.save:
+            checkpoint = torch.nn.ModuleList([model.adapter_layer for model in models])
+            torch.save(checkpoint, args.save)
         trainer = Trainer()
         results = trainer.validate(ensemble, test_dataloaders)
         for i in range(len(results)):
             results[i] = {k.replace("/", "-"): v for k, v in results[i].items()}
         log_metrics(results, test_flags)
+
         if args.greedy:
             idx = np.argsort(Soup)
             models = [models[i] for i in reversed(idx)]

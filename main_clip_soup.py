@@ -40,6 +40,7 @@ def main():
     parser.add_argument("--val-frequency", type=int, default=40)
     parser.add_argument("--n-runs", type=int, default=10)
     parser.add_argument("--greedy", action="store_true", default=False)
+    parser.add_argument("--save", default=None, type=str)
 
 
 
@@ -142,6 +143,8 @@ def main():
             if args.save_weights:
                 mlflow.pytorch.log_model(model, "models")
         ensemble = Soup(models, flag="uniform", test_flags=test_flags)
+        if args.save:
+            torch.save(ensemble.state_dict(), args.save)
         trainer = Trainer(logger=False)
         results = trainer.validate(ensemble, test_dataloaders)
         for i in range(len(results)):

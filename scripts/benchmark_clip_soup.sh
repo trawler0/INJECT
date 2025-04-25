@@ -46,6 +46,9 @@ if [ "$dataset" == "ucf101" ]; then
     python main_clip_soup.py "ucf101" "$clip_model" "$n_shots" CLIP_UCF101_TEMPLATES --epochs 100 --epoch-multiplier "$epoch_multiplier" --experiment "$experiment" --n-runs "$n_runs"
     exit
 fi
-
+if [ "$dataset" == "sun397" ]; then
+    python main_clip_soup.py "sun397" "$clip_model" "$n_shots" AUGMENTED_SUN397_TEMPLATES --epochs 40 --epoch-multiplier "$epoch_multiplier" --experiment "$experiment" --n-runs "$n_runs"
+    exit
+fi
 # Uncomment if needed for Imagenet:
 # python main_clip_soup.py imagenet "$clip_model" "$n_shots" CLIP_IMAGENET_TEMPLATES --epochs 10 --epoch-multiplier "$epoch_multiplier" --experiment "$experiment" --n-runs "$n_runs

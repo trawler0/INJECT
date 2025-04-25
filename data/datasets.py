@@ -16,6 +16,7 @@ __all__ = [
     "StandfordCars",
     "UCF101",
     "FGVC",
+    "SUN397",
     "Imagenet",
     "get_imagenet"
 ]
@@ -122,6 +123,17 @@ class UCF101(FewShotSplitDataset):
         root = os.path.join(root, UCF101_NAME)
         super().__init__(root, split, image_dir, split_file, **kwargs)
 
+SUN397_SPLIT_FILE = "split_zhou_SUN397.json"
+SUN397_IMAGE_DIR = "SUN397"
+SUN397_NAME = "SUN397"
+
+@DATASETS.register("sun397")
+class SUN397(FewShotSplitDataset):
+
+    def __init__(self, root, split, image_dir=SUN397_IMAGE_DIR, split_file=SUN397_SPLIT_FILE, **kwargs):
+        kwargs = only_split_train(split, kwargs)
+        root = os.path.join(root, SUN397_NAME)
+        super().__init__(root, split, image_dir, split_file, **kwargs)
 
 VARIANTS_FILE = "variants.txt"
 FGVC_IMAGE_DIR = "images"
