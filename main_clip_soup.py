@@ -39,10 +39,9 @@ def main():
     parser.add_argument("--experiment", type=str, default=None)
     parser.add_argument("--val-frequency", type=int, default=40)
     parser.add_argument("--n-runs", type=int, default=10)
-    parser.add_argument("--greedy", action="store_true", default=False)
     parser.add_argument("--save", default=None, type=str)
-
-
+    parser.add_argument("--eval-continuously", action="store_true", default=False)
+    parser.add_argument("--save-example-feats", action="store_true", default=False)
 
     args = parser.parse_args()
 
@@ -77,7 +76,6 @@ def main():
         test_flags = ["val", "imagenet-r", "imagenet-a", "v2", "sketch"] if args.dataset_identifier == "imagenet" else ["val", "test"]
 
         models = []
-        scores = []
         for j in range(args.n_runs):
             torch.manual_seed(j)
             reduction = np.random.randint(2, 10)
@@ -125,51 +123,49 @@ def main():
             print(args.epochs, args.epoch_multiplier)
             trainer = Trainer(max_epochs=int(args.epochs * args.epoch_multiplier), precision=32, enable_checkpointing=enable_checkpointing, logger=False, callbacks=callbacks, check_val_every_n_epoch=args.val_frequency)
             trainer.fit(model, train_loader, val_loader)
-
-            # delete best model, no need to save for benchmarking
-            if args.return_best and os.path.exists(checkpoint_callback.best_model_path):
-                os.remove(checkpoint_callback.best_model_path)
-
-            if args.test_ema:
-                model = model.ema
-            results = trainer.validate(model, test_dataloaders)
-            for i in range(len(results)):
-                results[i] = {f"{k}_{j}".replace("/", "-"): v for k, v in results[i].items()}
-            log_metrics(results, test_flags)
             models.append(model)
-            if args.greedy:
-                score = results[0][f"val_acc_1-dataloader_idx_0_{j}"]
-                scores.append(score)
-            if args.save_weights:
-                mlflow.pytorch.log_model(model, "models")
+
+
+            if args.eval_continuously:
+                ensemble = Soup(models, flag="uniform", test_flags=test_flags)
+                trainer = Trainer(logger=False)
+                results = trainer.validate(ensemble, test_dataloaders)
+                for i in range(len(results)):
+                    results[i] = {k.replace("/", "-"): v for k, v in results[i].items()}
+                    results[i] = {k+f"_iteration_{j}": v for k, v in results[i].items()}
+                log_metrics(results)
+            else:
+                results = trainer.validate(model, test_dataloaders)
+                for i in range(len(results)):
+                    results[i] = {f"{k}_{j}".replace("/", "-"): v for k, v in results[i].items()}
+                log_metrics(results)
+
         ensemble = Soup(models, flag="uniform", test_flags=test_flags)
-        if args.save:
-            torch.save(ensemble.state_dict(), args.save)
         trainer = Trainer(logger=False)
         results = trainer.validate(ensemble, test_dataloaders)
         for i in range(len(results)):
             results[i] = {k.replace("/", "-"): v for k, v in results[i].items()}
-        log_metrics(results, test_flags)
-        if args.greedy:
-            idx = np.argsort(scores)
-            models = [models[i] for i in reversed(idx)]
-            scores = [scores[i] for i in reversed(idx)]
-            current_soup = [models[0]]
-            current_score = 0.
-            for j in range(0, len(models)):
-                ensemble = Soup(models[:j+1], flag="search", test_flags=test_flags)
-                trainer = Trainer(logger=False)
-                results = trainer.validate(ensemble, test_dataloaders)
-                all_scores = [results[0][f"acc_{thresh}_search-dataloader_idx_0"] for thresh in ["0.1", "0.2", "0.3", "0.4", "0.5", "0.6", "0.7", "0.8", "0.9", "1"]]
-                score = np.max(all_scores)
-                if score > current_score:
-                    current_score = score
-                    current_soup.append(models[j])
+        log_metrics(results)
+        with torch.no_grad():
+            if args.save_example_feats:
+                X = []
+                labels = []
+                ensemble.to("cuda")
+                for (x, y) in val_loader:
+                    x = x.to("cuda")
+                    x = torch.nn.functional.normalize(x, p=2, dim=-1)
+                    out = [x] + [models[j].adapter_layer(x) for j in range(args.n_runs)]
+                    out = torch.stack(out, 1)
+                    out = out.cpu().numpy()
+                    X.append(out)
+                    labels.append(y.cpu().numpy())
+                X = np.concatenate(X, axis=0)
+                labels = np.concatenate(labels, axis=0)
+                tempdir = tempfile.gettempdir()
+                np.savez(os.path.join(tempdir, "examples.npz"), X=X, y=labels)
+                mlflow.log_artifact(os.path.join(tempdir, "examples.npz"))
 
-            ensemble = Soup(current_soup, flag="greedy", test_flags=test_flags)
-            trainer = Trainer(logger=False)
-            results = trainer.validate(ensemble, test_dataloaders)
-            log_metrics(results, test_flags)
+
 
 if __name__ == "__main__":
     main()

@@ -38,6 +38,8 @@ def main():
     parser.add_argument("--n-runs", type=int, default=10)
     parser.add_argument("--greedy", action="store_true", default=False)
     parser.add_argument("--save", default=None, type=str)
+    parser.add_argument("--eval-continuously", action="store_true", default=False)
+    parser.add_argument("--no-mask", action="store_true", default=False)
 
     args = parser.parse_args()
 
@@ -79,10 +81,8 @@ def main():
             val_dataset = CachedDataset(val_cached)
         else:
             val_dataset = DATASETS.get(args.dataset_identifier)(args.root, "val", transform=backbone.preprocess)
-        baseline_dataset = DATASETS.get(args.dataset_identifier)(args.root, "train", transform=backbone.preprocess, n_shot=args.n_shot, seed=args.seed)
 
         val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=32, num_workers=0)
-        baseline_loader = torch.utils.data.DataLoader(baseline_dataset, batch_size=32, num_workers=0)
 
         test_dataloaders = []
         for test_flag in test_flags:
@@ -97,32 +97,22 @@ def main():
         prompts = os.path.join(cache_dir, f"{args.dataset_identifier}-{args.n_shot}.npz")
         prompts = np.load(prompts)
         p, idxs = prompts["emb"], prompts["idxs"]
+        if args.no_mask:
+            N, L, D = p.shape
+            idxs = -np.ones((N, L), dtype=np.int32)
         C, N, D = p.shape
         y = torch.arange(C).unsqueeze(1).expand(C, N).reshape(C*N)
 
         def baseline_eval():
-            """feats = []
-            labels = []
-            backbone.eval()
-            backbone.cuda()
-            for x, y in tqdm(baseline_loader):
-                x = x.cuda()
-                with torch.no_grad():
-                    feat = backbone(x)
-                feats.append(feat.detach().cpu())
-                labels.append(y)
-            feats = torch.cat(feats)
-            labels = torch.cat(labels)"""
             feats = torch.tensor(p).float().view(C*N, D)
             labels = y.reshape(C*N)
             evaluator = BaselineEvaluator(backbone, feats, labels, test_flags=test_flags)
             trainer = Trainer(max_epochs=1, precision=32, enable_checkpointing=False, logger=False)
             results = trainer.validate(evaluator, test_dataloaders)
-            log_metrics(results, test_flags)
+            log_metrics(results)
         baseline_eval()
 
         models = []
-        scores = []
         for j in range(args.n_runs):
             torch.manual_seed(j)
             reduction = np.random.randint(2, 10)
@@ -143,19 +133,22 @@ def main():
             train_loader = torch.utils.data.DataLoader(ds, batch_size=min(args.batch_size, len(ds)), num_workers=2, shuffle=True, drop_last=True, persistent_workers=True)
             trainer = Trainer(max_epochs=int(args.epochs * args.epoch_multiplier), precision=32, enable_checkpointing=False, logger=False, check_val_every_n_epoch=args.val_frequency)
             trainer.fit(model, train_loader, val_loader)
-            if args.test_ema:
-                model = model.ema
-
-            results = trainer.validate(model, test_dataloaders)
-            for i in range(len(results)):
-                results[i] = {f"{k}_{j}".replace("/", "-"): v for k, v in results[i].items()}
-            log_metrics(results, test_flags)
             models.append(model)
-            if args.greedy:
-                score = results[0][f"val_acc_1-dataloader_idx_0_{j}"]
-                scores.append(score)
-            if args.save_weights:
-                mlflow.pytorch.log_model(model, "models")
+
+
+            if args.eval_continuously:
+                ensemble = Soup(models, flag="uniform", test_flags=test_flags)
+                trainer = Trainer(logger=False)
+                results = trainer.validate(ensemble, test_dataloaders)
+                for i in range(len(results)):
+                    results[i] = {k.replace("/", "-"): v for k, v in results[i].items()}
+                    results[i] = {k+f"_iteration_{j}": v for k, v in results[i].items()}
+                log_metrics(results)
+            else:
+                results = trainer.validate(model, test_dataloaders)
+                for i in range(len(results)):
+                    results[i] = {f"{k}_{j}".replace("/", "-"): v for k, v in results[i].items()}
+                log_metrics(results)
 
         ensemble = Soup(models, test_flags=test_flags)
         if args.save:
@@ -165,28 +158,7 @@ def main():
         results = trainer.validate(ensemble, test_dataloaders)
         for i in range(len(results)):
             results[i] = {k.replace("/", "-"): v for k, v in results[i].items()}
-        log_metrics(results, test_flags)
-
-        if args.greedy:
-            idx = np.argsort(Soup)
-            models = [models[i] for i in reversed(idx)]
-            scores = [Soup[i] for i in reversed(idx)]
-            current_soup = [models[0]]
-            current_score = 0.
-            for j in range(0, len(models)):
-                ensemble = Soup(models[:j+1], flag="search", test_flags=test_flags)
-                trainer = Trainer(logger=False)
-                results = trainer.validate(ensemble, test_dataloaders)
-                all_scores = [results[0][f"acc_{thresh}_search-dataloader_idx_0"] for thresh in ["0.1", "0.2", "0.3", "0.4", "0.5", "0.6", "0.7", "0.8", "0.9", "1"]]
-                score = np.max(all_scores)
-                if score > current_score:
-                    current_score = score
-                    current_soup.append(models[j])
-
-            ensemble = Soup(current_soup, flag="greedy", test_flags=test_flags)
-            trainer = Trainer(logger=False)
-            results = trainer.validate(ensemble, test_dataloaders)
-            log_metrics(results, test_flags)
+        log_metrics(results)
 
 
 if __name__ == "__main__":

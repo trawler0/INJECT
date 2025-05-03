@@ -97,7 +97,7 @@ class CachedDataset(torch.utils.data.Dataset):
         return self.embeddings[idx], self.labels[idx]
 
 
-def log_metrics(results, test_flags):
+def log_metrics(results):
     for i, result in enumerate(results):
         for key, value in result.items():
             mlflow.log_metric(key, value)
