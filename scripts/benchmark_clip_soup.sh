@@ -8,7 +8,7 @@ n_runs=$5
 
 echo "$clip_model"  # Fixed echo for variable
 
-experiment="clip_soup_v2 $clip_model $n_shots"
+experiment="clip_soup_v3 $clip_model $n_shots"
 
 if [ "$dataset" == "fgvc_aircraft" ]; then
     python main_clip_soup.py "fgvc_aircraft" "$clip_model" "$n_shots" AUGMENTED_FGVC_TEMPLATES --epochs 100 --epoch-multiplier "$epoch_multiplier" --experiment "$experiment" --n-runs "$n_runs"

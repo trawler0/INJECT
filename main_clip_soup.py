@@ -1,6 +1,6 @@
 import clip
 from model import Adapter, Soup
-from utils import Backbone, CachedDataset, log_metrics, DEFAULT_TRANSFORMS
+from utils import Backbone, CachedDataset, log_metrics, default_transforms
 from pytorch_lightning import Trainer
 import mlflow
 import argparse
@@ -81,15 +81,22 @@ def main():
             reduction = np.random.randint(2, 10)
             lr = np.random.choice([2e-3, 1e-3, 5e-4])
             weight_decay = np.random.choice([1e-3, 1e-2, 5e-2])
+            augmentation_strength = np.random.rand()
+            epochs = int(args.epochs * args.epoch_multiplier * (np.random.rand() * .8 + .2))
+
+
             mlflow.log_param(f"reduction_{j}", reduction)
             mlflow.log_param(f"lr_{j}", lr)
             mlflow.log_param(f"weight_decay_{j}", weight_decay)
-            model = Adapter(reduction=reduction, backbone=backbone, text_features=prompts, idxs=idxs, test_flags=test_flags, lr=lr, weight_decay=weight_decay)
+            mlflow.log_param(f"augmentation_strength_{j}", augmentation_strength)
+            mlflow.log_param(f"epochs_{j}", epochs)
 
             train_transforms = T.Compose([
-                DEFAULT_TRANSFORMS,
+                default_transforms(augmentation_strength),
                 backbone.preprocess
             ])
+
+            model = Adapter(reduction=reduction, backbone=backbone, text_features=prompts, idxs=idxs, test_flags=test_flags, lr=lr, weight_decay=weight_decay)
 
             if args.use_cached_data == "True":
                 val_dataset = CachedDataset(val_cached)
@@ -121,7 +128,7 @@ def main():
                 callbacks = None
                 enable_checkpointing = False
             print(args.epochs, args.epoch_multiplier)
-            trainer = Trainer(max_epochs=int(args.epochs * args.epoch_multiplier), precision=32, enable_checkpointing=enable_checkpointing, logger=False, callbacks=callbacks, check_val_every_n_epoch=args.val_frequency)
+            trainer = Trainer(max_epochs=epochs, precision=32, enable_checkpointing=enable_checkpointing, logger=False, callbacks=callbacks, check_val_every_n_epoch=args.val_frequency)
             trainer.fit(model, train_loader, val_loader)
             models.append(model)
 

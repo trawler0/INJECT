@@ -8,7 +8,6 @@ import numpy as np
 from data import DATASETS, IdxDataset
 import torch
 from torchvision import transforms as T
-from lora import lora_dinov2
 from tqdm import tqdm
 
 def main():
@@ -64,7 +63,6 @@ def main():
         val_cached = os.path.join(cache_dir, f"{args.dataset_identifier}-val-features.npz")
 
         backbone = Backbone(args.dinov2_model)
-        backbone.model = lora_dinov2(backbone.model, 10, 8, strategy=args.lora_strategy)
         test_flags = ["val", "imagenet-r", "imagenet-a", "v2", "sketch"] if args.dataset_identifier == "imagenet" else ["val", "test"]
 
         train_transforms = T.Compose([
@@ -121,7 +119,6 @@ def main():
         ds = IdxDataset(ds)
 
         backbone = Backbone(args.dinov2_model)
-        backbone.model = lora_dinov2(backbone.model, 10, 8, strategy=args.lora_strategy)
 
         print("Training model")
         model = Adapter(reduction=4, backbone=backbone, text_features=p, idxs=idxs, test_flags=test_flags)

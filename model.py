@@ -1,5 +1,4 @@
 import torch
-from pytorch_lightning.utilities.types import OptimizerLRScheduler, STEP_OUTPUT
 from torch import nn
 from torch.nn import functional as F
 from pytorch_lightning import LightningModule
@@ -9,7 +8,6 @@ import numpy as np
 from typing import *
 import math
 from templates import IMAGENET_A_IDX, IMAGENET_R_IDX
-import random
 
 DEFAULT_LR = 1e-3
 DEFAULT_EMA_DECAY = 0.997
@@ -221,7 +219,7 @@ class BaselineEvaluator(LightningModule):
         self.test_flags = test_flags
 
 
-    def training_step(self, *args: Any, **kwargs: Any) -> STEP_OUTPUT:
+    def training_step(self, *args: Any, **kwargs: Any):
         raise NotImplementedError("This model is only for evaluation")
 
     @torch.no_grad()
@@ -270,14 +268,4 @@ class BaselineEvaluator(LightningModule):
         self.log("proto_acc", proto_acc, on_step=False, on_epoch=True, prog_bar=True, batch_size=image.shape[0])
 
 
-
-
-if __name__ == "__main__":
-    backbone = torch.hub.load('facebookresearch/dinov2', 'dinov2_vits14')
-    feats = torch.randn(16, 16, 384)
-    idxs = torch.randint(0, 16, (16, 16))
-    inject = INJECT(backbone, feats, idxs)
-    image = torch.randn(16, 3, 224, 224)
-    logits = inject(image)
-    print(logits)
 

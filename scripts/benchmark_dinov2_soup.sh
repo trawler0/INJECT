@@ -6,7 +6,7 @@ n_shots=$3
 epoch_multiplier=$4
 n_runs=$5
 
-experiment="dinov2_soup_v2 $dinov2_model $n_shots"
+experiment="dinov2_soup_v3 $dinov2_model $n_shots"
 
 echo "$dinov2_model"  # Fixed echo for variable
 

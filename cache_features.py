@@ -7,7 +7,6 @@ import templates as temps
 from data import DATASETS
 from tqdm import tqdm
 from utils import Backbone
-from utils import DEFAULT_TRANSFORMS, T
 import random
 
 @torch.no_grad()
@@ -34,10 +33,7 @@ def get_prompts_dinov2(dinov2_model, n_aug, ds):
     model.eval()
     embeddings = {j: [] for j in range(len(ds.classes))}
     idxs = {j: [] for j in range(len(ds.classes))}
-    ds.transform = T.Compose([
-        # DEFAULT_TRANSFORMS,
-        model.preprocess
-    ])
+    ds.transform = model.preprocess
     for j in tqdm(range(len(ds))):
         _, y = ds[j]
         x = []

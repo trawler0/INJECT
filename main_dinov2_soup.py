@@ -1,5 +1,5 @@
 from model import Adapter,  BaselineEvaluator, Soup
-from utils import Backbone, CachedDataset, log_metrics, DEFAULT_TRANSFORMS
+from utils import Backbone, CachedDataset, log_metrics, default_transforms, IMAGENET_MEAN, IMAGENET_STD
 from pytorch_lightning import Trainer
 import mlflow
 import argparse
@@ -8,8 +8,7 @@ import numpy as np
 from data import DATASETS, IdxDataset
 import torch
 from torchvision import transforms as T
-from lora import lora_dinov2
-from tqdm import tqdm
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -68,13 +67,8 @@ def main():
         val_cached = os.path.join(cache_dir, f"{args.dataset_identifier}-val-features.npz")
 
         backbone = Backbone(args.dinov2_model)
-        backbone.model = lora_dinov2(backbone.model, 10, 8, strategy=args.lora_strategy)
         test_flags = ["val", "imagenet-r", "imagenet-a", "v2", "sketch"] if args.dataset_identifier == "imagenet" else ["val", "test"]
 
-        train_transforms = T.Compose([
-            DEFAULT_TRANSFORMS,
-            backbone.preprocess
-        ])
 
         if args.use_cached_data:
             assert args.lora_strategy == "none", "Caching is only supported for the 'none' strategy"
@@ -118,9 +112,21 @@ def main():
             reduction = np.random.randint(2, 10)
             lr = np.random.choice([2e-3, 1e-3, 5e-4])
             weight_decay = np.random.choice([1e-3, 1e-2, 5e-2])
+            augmentation_strength = np.random.rand()
+            epochs = int(args.epochs * args.epoch_multiplier * (np.random.rand() * .6 + .4))
+
             mlflow.log_param(f"reduction_{j}", reduction)
             mlflow.log_param(f"lr_{j}", lr)
             mlflow.log_param(f"weight_decay_{j}", weight_decay)
+            mlflow.log_param(f"augmentation_strength_{j}", augmentation_strength)
+            mlflow.log_param(f"epochs_{j}", epochs)
+
+            train_transforms = T.Compose([
+                default_transforms(augmentation_strength),
+                T.ToTensor(),
+                T.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
+            ])
+
             model = Adapter(reduction=reduction, backbone=backbone, text_features=p, idxs=idxs,
                             test_flags=test_flags, lr=lr, weight_decay=weight_decay)
 
@@ -128,10 +134,9 @@ def main():
             ds = IdxDataset(ds)
 
             backbone = Backbone(args.dinov2_model)
-            backbone.model = lora_dinov2(backbone.model, 10, 8, strategy=args.lora_strategy)
 
-            train_loader = torch.utils.data.DataLoader(ds, batch_size=min(args.batch_size, len(ds)), num_workers=2, shuffle=True, drop_last=True, persistent_workers=True)
-            trainer = Trainer(max_epochs=int(args.epochs * args.epoch_multiplier), precision=32, enable_checkpointing=False, logger=False, check_val_every_n_epoch=args.val_frequency)
+            train_loader = torch.utils.data.DataLoader(ds, batch_size=min(args.batch_size, len(ds)), num_workers=4, shuffle=True, drop_last=True, persistent_workers=True)
+            trainer = Trainer(max_epochs=epochs, precision=32, enable_checkpointing=False, logger=False, check_val_every_n_epoch=args.val_frequency)
             trainer.fit(model, train_loader, val_loader)
             models.append(model)
 

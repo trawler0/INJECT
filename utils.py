@@ -9,21 +9,32 @@ __all__ = [
     "Backbone",
     "CachedDataset",
     "log_metrics",
-    "DEFAULT_TRANSFORMS"
+    "default_transforms"
 ]
 
-DEFAULT_IMAGE_SIZE = 448  # for dinov2 models, will automatically be re-resized if clip is used
+DEFAULT_IMAGE_SIZE = 350  # for dinov2 models, will automatically be re-resized if clip is used
+DINOV2_TRAIN_SIZE = 350  # for dinov2 models, this is the size used for training
+
 # these have proven to work well for training, augmentations are very important for these purposes
-DEFAULT_TRANSFORMS = T.Compose([
-            T.RandomResizedCrop(DEFAULT_IMAGE_SIZE, scale=(0.2, 1.0)),
-            T.RandomHorizontalFlip(),
-            T.RandomGrayscale(p=0.2),
-            T.RandomApply([
-                T.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4, hue=0.1)
-            ], p=0.4)
-        ])
+def default_transforms(strength):
+    min_scale = strength * 0.08 + (1 - strength) * 0.4
+    return T.Compose([
+        T.RandomResizedCrop(DINOV2_TRAIN_SIZE, scale=(min_scale, 1.0)),
+        T.RandomHorizontalFlip(),
+        T.RandomApply([
+            T.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.2, hue=0.1)
+        ], p=0.8 * strength),
+        T.RandomGrayscale(p=0.2 * strength),
+        T.RandomApply([
+            T.GaussianBlur(kernel_size=5, sigma=(0.1, 2.0))
+        ], p=0.2 * strength),
+        T.RandomSolarize(threshold=128.0, p=0.2 * strength),
+    ])
+
+
 IMAGENET_MEAN = (0.485, 0.456, 0.406)
 IMAGENET_STD = (0.229, 0.224, 0.225)
+
 
 class Backbone(nn.Module):
     def __init__(self, name, size=DEFAULT_IMAGE_SIZE, force_amp=True):
@@ -32,7 +43,8 @@ class Backbone(nn.Module):
             self.model_type = "dinov2"
             self.model = torch.hub.load('facebookresearch/dinov2', name)
             self.preprocess = T.Compose([
-                T.Resize((size, size), interpolation=3),
+                T.Resize((size * 8) // 7, interpolation=3),
+                T.CenterCrop(size),
                 T.ToTensor(),
                 T.Normalize(IMAGENET_MEAN, IMAGENET_STD)  # default imagenet values, these are actually used in DINOv2
             ])
@@ -65,7 +77,8 @@ class Backbone(nn.Module):
         x = x.reshape(x.shape[0], x.shape[1], -1)  # shape = [*, width, grid ** 2]
         x = x.permute(0, 2, 1)  # shape = [*, grid ** 2, width]
         x = torch.cat(
-            [self.model.visual.class_embedding.to(x.dtype) + torch.zeros(x.shape[0], 1, x.shape[-1], dtype=x.dtype, device=x.device),
+            [self.model.visual.class_embedding.to(x.dtype) + torch.zeros(x.shape[0], 1, x.shape[-1], dtype=x.dtype,
+                                                                         device=x.device),
              x], dim=1)  # shape = [*, grid ** 2 + 1, width]
         x = x + self.model.visual.positional_embedding.to(x.dtype)
         x = self.model.visual.ln_pre(x)
@@ -82,6 +95,7 @@ class Backbone(nn.Module):
             x = x @ self.model.visual.proj
 
         return x
+
 
 # cache the validation datasets to avoid repeated computation of the frozen features
 class CachedDataset(torch.utils.data.Dataset):
@@ -101,6 +115,7 @@ def log_metrics(results):
     for i, result in enumerate(results):
         for key, value in result.items():
             mlflow.log_metric(key, value)
+
 
 if __name__ == "__main__":
     backbone = Backbone("ViT-B/32").cpu()
