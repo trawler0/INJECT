@@ -12,23 +12,19 @@ __all__ = [
     "default_transforms"
 ]
 
-DEFAULT_IMAGE_SIZE = 350  # for dinov2 models, will automatically be re-resized if clip is used
-DINOV2_TRAIN_SIZE = 350  # for dinov2 models, this is the size used for training
+DEFAULT_IMAGE_SIZE = 308
+DINOV2_TRAIN_SIZE = 224
 
 # these have proven to work well for training, augmentations are very important for these purposes
 def default_transforms(strength):
-    min_scale = strength * 0.08 + (1 - strength) * 0.4
+    min_scale = strength * 0.2 + (1 - strength) * 0.8
     return T.Compose([
         T.RandomResizedCrop(DINOV2_TRAIN_SIZE, scale=(min_scale, 1.0)),
         T.RandomHorizontalFlip(),
         T.RandomApply([
             T.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.2, hue=0.1)
-        ], p=0.8 * strength),
+        ], p=0.5 * strength),
         T.RandomGrayscale(p=0.2 * strength),
-        T.RandomApply([
-            T.GaussianBlur(kernel_size=5, sigma=(0.1, 2.0))
-        ], p=0.2 * strength),
-        T.RandomSolarize(threshold=128.0, p=0.2 * strength),
     ])
 
 

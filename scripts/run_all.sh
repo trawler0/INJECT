@@ -3,11 +3,11 @@
 #bash scripts/robustness_clip_soup_imagenet.sh ViT-B/16 .8 8
 #bash scripts/robustness_clip_soup_imagenet.sh ViT-B/32 1 8
 
-for dataset in "fgvc_aircraft" "eurosat" "caltech-101" "dtd" "food-101" "oxford_flowers" "oxford_pets" "standford_cars" "ucf101" # "sun397"
+for dataset in "eurosat" "caltech-101" "dtd" "food-101" "oxford_flowers" "oxford_pets" "standford_cars" "ucf101" # "sun397"
 do
   # Benchmarking DinoV2
-  bash scripts/benchmark_dinov2_soup.sh dinov2_vits14 "$dataset" 2 1 8
-  bash scripts/benchmark_dinov2_soup.sh dinov2_vits14 "$dataset" 4 1 8
+  bash scripts/benchmark_dinov2_soup.sh dinov2_vits14 "$dataset" 2 1 8 --no-mask
+  bash scripts/benchmark_dinov2_soup.sh dinov2_vits14 "$dataset" 4 1 8 --no-mask
   bash scripts/benchmark_dinov2_soup.sh dinov2_vits14 "$dataset" 8 1 8
   bash scripts/benchmark_dinov2_soup.sh dinov2_vits14 "$dataset" 16 1 8
 

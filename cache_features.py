@@ -72,7 +72,7 @@ def cache_dataset(file_name, model, dataset):
     embeddings = []
     labels = []
     dataset.transform = model.preprocess
-    loader = torch.utils.data.DataLoader(dataset, batch_size=64, num_workers=4)
+    loader = torch.utils.data.DataLoader(dataset, batch_size=64, num_workers=8)
     for batch in tqdm(loader):
         image, y = batch
         image = image.to(device)

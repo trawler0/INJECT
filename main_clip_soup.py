@@ -82,7 +82,7 @@ def main():
             lr = np.random.choice([2e-3, 1e-3, 5e-4])
             weight_decay = np.random.choice([1e-3, 1e-2, 5e-2])
             augmentation_strength = np.random.rand()
-            epochs = int(args.epochs * args.epoch_multiplier * (np.random.rand() * .8 + .2))
+            epochs = int(args.epochs * args.epoch_multiplier * (np.random.rand() * .75 + .25))
 
 
             mlflow.log_param(f"reduction_{j}", reduction)
