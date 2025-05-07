@@ -15,7 +15,7 @@ if [ "$dataset" == "fgvc_aircraft" ]; then
     exit
 fi
 if [ "$dataset" == "eurosat" ]; then
-    python main_clip_soup.py "eurosat" "$clip_model" "$n_shots" AUGMENTED_EUROSAT_TEMPLATES  --epochs 300 --batch-size 32 --epoch-multiplier "$epoch_multiplier" --experiment "$experiment" --n-runs "$n_runs"
+    python main_clip_soup.py "eurosat" "$clip_model" "$n_shots" AUGMENTED_EUROSAT_TEMPLATES  --epochs 500 --batch-size 32 --epoch-multiplier "$epoch_multiplier" --experiment "$experiment" --n-runs "$n_runs"
     exit
 fi
 if [ "$dataset" == "caltech-101" ]; then
@@ -23,7 +23,7 @@ if [ "$dataset" == "caltech-101" ]; then
     exit
 fi
 if [ "$dataset" == "dtd" ]; then
-    python main_clip_soup.py "dtd" "$clip_model" "$n_shots" CLIP_DTD_TEMPLATES --epochs 60 --epoch-multiplier "$epoch_multiplier" --experiment "$experiment" --n-runs "$n_runs"
+    python main_clip_soup.py "dtd" "$clip_model" "$n_shots" CLIP_DTD_TEMPLATES --epochs 100 --epoch-multiplier "$epoch_multiplier" --experiment "$experiment" --n-runs "$n_runs"
     exit
 fi
 if [ "$dataset" == "food-101" ]; then
@@ -35,7 +35,7 @@ if [ "$dataset" == "oxford_flowers" ]; then
     exit
 fi
 if [ "$dataset" == "oxford_pets" ]; then
-    python main_clip_soup.py "oxford_pets" "$clip_model" "$n_shots" AUGMENTED_OXFORD_PETS_TEMPLATES  --epochs 40 --epoch-multiplier "$epoch_multiplier" --experiment "$experiment" --n-runs "$n_runs"
+    python main_clip_soup.py "oxford_pets" "$clip_model" "$n_shots" AUGMENTED_OXFORD_PETS_TEMPLATES  --epochs 150 --epoch-multiplier "$epoch_multiplier" --experiment "$experiment" --n-runs "$n_runs"
     exit
 fi
 if [ "$dataset" == "standford_cars" ]; then

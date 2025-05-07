@@ -16,7 +16,7 @@ if [ "$dataset" == "fgvc_aircraft" ]; then
     exit
 fi
 if [ "$dataset" == "eurosat" ]; then
-    python main_dinov2_soup.py eurosat "$dinov2_model" "$n_shots"  --epochs 100 --batch-size 32 --epoch-multiplier "$epoch_multiplier" --experiment "$experiment" --n-runs "$n_runs" $optional_args
+    python main_dinov2_soup.py eurosat "$dinov2_model" "$n_shots"  --epochs 400 --batch-size 32 --epoch-multiplier "$epoch_multiplier" --experiment "$experiment" --n-runs "$n_runs" $optional_args
     exit
 fi
 if [ "$dataset" == "caltech-101" ]; then
@@ -24,7 +24,7 @@ if [ "$dataset" == "caltech-101" ]; then
     exit
 fi
 if [ "$dataset" == "dtd" ]; then
-    python main_dinov2_soup.py dtd "$dinov2_model" "$n_shots" --epochs 80 --epoch-multiplier "$epoch_multiplier" --experiment "$experiment" --n-runs "$n_runs" $optional_args
+    python main_dinov2_soup.py dtd "$dinov2_model" "$n_shots" --epochs 120 --epoch-multiplier "$epoch_multiplier" --experiment "$experiment" --n-runs "$n_runs" $optional_args
     exit
 fi
 if [ "$dataset" == "food-101" ]; then
@@ -36,7 +36,7 @@ if [ "$dataset" == "oxford_flowers" ]; then
     exit
 fi
 if [ "$dataset" == "oxford_pets" ]; then
-    python main_dinov2_soup.py oxford_pets "$dinov2_model" "$n_shots"  --epochs 80 --epoch-multiplier "$epoch_multiplier" --experiment "$experiment" --n-runs "$n_runs" $optional_args
+    python main_dinov2_soup.py oxford_pets "$dinov2_model" "$n_shots"  --epochs 150 --epoch-multiplier "$epoch_multiplier" --experiment "$experiment" --n-runs "$n_runs" $optional_args
     exit
 fi
 if [ "$dataset" == "standford_cars" ]; then

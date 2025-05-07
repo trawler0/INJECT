@@ -79,10 +79,10 @@ def main():
         for j in range(args.n_runs):
             torch.manual_seed(j)
             reduction = np.random.randint(2, 10)
-            lr = np.random.choice([2e-3, 1e-3, 5e-4])
+            lr = np.random.choice([5e-3, 2e-3, 1e-3])
             weight_decay = np.random.choice([1e-3, 1e-2, 5e-2])
-            augmentation_strength = np.random.rand()
-            epochs = int(args.epochs * args.epoch_multiplier * (np.random.rand() * .75 + .25))
+            augmentation_strength = np.random.choice([.25, .5, .75, 1])
+            epochs = int(args.epochs * args.epoch_multiplier * (np.random.rand() * .5 + .5))
 
 
             mlflow.log_param(f"reduction_{j}", reduction)
