@@ -41,7 +41,6 @@ def main():
     parser.add_argument("--n-runs", type=int, default=10)
     parser.add_argument("--save", default=None, type=str)
     parser.add_argument("--eval-continuously", action="store_true", default=False)
-    parser.add_argument("--save-example-feats", action="store_true", default=False)
 
     args = parser.parse_args()
 
@@ -147,30 +146,16 @@ def main():
                     results[i] = {f"{k}_{j}".replace("/", "-"): v for k, v in results[i].items()}
                 log_metrics(results)
 
-        ensemble = Soup(models, flag="uniform", test_flags=test_flags)
+
+        ensemble = Soup(models, test_flags=test_flags)
+        if args.save:
+            checkpoint = torch.nn.ModuleList([model.adapter_layer for model in models])
+            torch.save(checkpoint, args.save)
         trainer = Trainer(logger=False)
         results = trainer.validate(ensemble, test_dataloaders)
         for i in range(len(results)):
             results[i] = {k.replace("/", "-"): v for k, v in results[i].items()}
         log_metrics(results)
-        with torch.no_grad():
-            if args.save_example_feats:
-                X = []
-                labels = []
-                ensemble.to("cuda")
-                for (x, y) in val_loader:
-                    x = x.to("cuda")
-                    x = torch.nn.functional.normalize(x, p=2, dim=-1)
-                    out = [x] + [models[j].adapter_layer(x) for j in range(args.n_runs)]
-                    out = torch.stack(out, 1)
-                    out = out.cpu().numpy()
-                    X.append(out)
-                    labels.append(y.cpu().numpy())
-                X = np.concatenate(X, axis=0)
-                labels = np.concatenate(labels, axis=0)
-                tempdir = tempfile.gettempdir()
-                np.savez(os.path.join(tempdir, "examples.npz"), X=X, y=labels)
-                mlflow.log_artifact(os.path.join(tempdir, "examples.npz"))
 
 
 

@@ -14,4 +14,3 @@ do
   python cache_features.py imagenet "$clip_model" --split $split --cache-dataset
 done
 
-""

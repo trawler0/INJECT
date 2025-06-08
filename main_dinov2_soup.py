@@ -76,7 +76,7 @@ def main():
         else:
             val_dataset = DATASETS.get(args.dataset_identifier)(args.root, "val", transform=backbone.preprocess)
 
-        val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=32, num_workers=0)
+        val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=args.batch_size, num_workers=0)
 
         test_dataloaders = []
         for test_flag in test_flags:
@@ -85,7 +85,7 @@ def main():
                 test_dataset = CachedDataset(test_cached)
             else:
                 test_dataset = DATASETS.get(args.dataset_identifier)(args.root, test_flag, transform=backbone.preprocess)
-            test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=32, num_workers=0)
+            test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=args.batch_size, num_workers=0)
             test_dataloaders.append(test_dataloader)
 
         prompts = os.path.join(cache_dir, f"{args.dataset_identifier}-{args.n_shot}.npz")
@@ -138,9 +138,8 @@ def main():
             train_loader = torch.utils.data.DataLoader(ds, batch_size=min(args.batch_size, len(ds)), num_workers=4, shuffle=True, drop_last=True, persistent_workers=True)
             trainer = Trainer(max_epochs=epochs, precision=32, enable_checkpointing=False, logger=False, check_val_every_n_epoch=args.val_frequency)
             trainer.fit(model, train_loader, val_loader)
+
             models.append(model)
-
-
             if args.eval_continuously:
                 ensemble = Soup(models, flag="uniform", test_flags=test_flags)
                 trainer = Trainer(logger=False)
@@ -154,12 +153,14 @@ def main():
                 for i in range(len(results)):
                     results[i] = {f"{k}_{j}".replace("/", "-"): v for k, v in results[i].items()}
                 log_metrics(results)
+            if j != 0:
+                models[-1].backone = torch.nn.Identity()  # Detach the backbone to save memory for vit-g
 
         ensemble = Soup(models, test_flags=test_flags)
         if args.save:
             checkpoint = torch.nn.ModuleList([model.adapter_layer for model in models])
             torch.save(checkpoint, args.save)
-        trainer = Trainer()
+        trainer = Trainer(logger=False)
         results = trainer.validate(ensemble, test_dataloaders)
         for i in range(len(results)):
             results[i] = {k.replace("/", "-"): v for k, v in results[i].items()}

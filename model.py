@@ -183,7 +183,7 @@ class Soup(LightningModule):
 
 
     def forward(self, image, ratio=.9):
-        image_features = self.backbone(image)
+        image_features = self.models[0].backbone(image)
         return self.forward_clip_adapter(image_features, ratio=ratio)
 
     def validation_step(self, batch, batch_idx, dataloader_idx=0):

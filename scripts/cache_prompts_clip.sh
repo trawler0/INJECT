@@ -18,6 +18,7 @@ python cache_features.py standford_cars "$clip_model" --cache-prompts --template
 python cache_features.py ucf101 "$clip_model" --cache-prompts --templates CLIP_UCF101_TEMPLATES --n-shot "$n_shot" --n-augs 1
 python cache_features.py fgvc_aircraft "$clip_model" --cache-prompts --templates CLIP_FGVC_TEMPLATES --n-shot "$n_shot" --n-augs 1
 python cache_features.py fgvc_aircraft "$clip_model" --cache-prompts --templates AUGMENTED_FGVC_TEMPLATES --n-shot "$n_shot" --n-augs 1
-python cache_features.py imagenet "$clip_model" --cache-prompts --templates CLIP_IMAGENET_TEMPLATES --n-shot "$n_shot" --n-augs 1
 python cache_features.py sun397 "$clip_model" --cache-prompts --templates CLIP_SUN397_TEMPLATES --n-shot "$n_shot" --n-augs 1
 python cache_features.py sun397 "$clip_model" --cache-prompts --templates AUGMENTED_SUN397_TEMPLATES --n-shot "$n_shot" --n-augs 1
+python cache_features.py imagenet "$clip_model" --cache-prompts --templates CLIP_IMAGENET_TEMPLATES --n-shot "$n_shot" --n-augs 1
+
