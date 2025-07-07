@@ -1,0 +1,6 @@
+albumentations==1.4.11
+clip
+imagenetv2-pytorch
+lightning
+mlflow==2.14.1
+matplotlib
