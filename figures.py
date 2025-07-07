@@ -99,7 +99,7 @@ def clip(model, dataset_identifiers=datasets):
     for i, (dataset_identifier, scores) in enumerate(metric_.items()):
         ax = axs[i // cols, i % cols]
         ax.plot(n_shots, np.array(scores)*100, marker='o', linestyle='-', linewidth=2, markersize=2, color='g', label="Adapter Average")
-        ax.plot(n_shots, np.array(soup_[dataset_identifier])*100, marker='o', linestyle='-', linewidth=2, markersize=4, label="CAT-Adapter",
+        ax.plot(n_shots, np.array(soup_[dataset_identifier])*100, marker='o', linestyle='-', linewidth=2, markersize=4, label="Soup-Adapter",
                 color='b')
         """ax.plot(n_shots, avg_[dataset_identifier], marker='o', linestyle='-', linewidth=2, markersize=4, label="avg",
                 color='r')
@@ -240,7 +240,7 @@ def dinov2(model, dataset_identifiers=datasets):
 
 def robustness_clip(id=0):
 
-    fig, ax = plt.subplots(figsize=(15, 15))
+    fig, ax = plt.subplots(figsize=(12, 12))
 
     experiment_name = ["clip_soup_imagenet_v3 ViT-B/32", "clip_soup_imagenet_v3 ViT-B/16"][id]
     # experiment = mlflow.get_experiment_by_name(experiment_name)
@@ -366,7 +366,7 @@ def robustness_clip(id=0):
     # Define custom legend elements
     custom_lines = [
         Line2D([0], [0], color='gray', marker='o', linestyle='None', markersize=8, label='Individual Adapters'),
-        Line2D([0], [0], color='gray', marker='D', linestyle='None', markersize=10, label='CAT Adapter'),
+        Line2D([0], [0], color='gray', marker='D', linestyle='None', markersize=10, label='Soup Adapter'),
         Line2D([0], [0], color='purple', marker='*', linestyle='None', markersize=14, label='Zero Shot'),
         Line2D([0], [0], color=cm.get_cmap('coolwarm')(0.0), lw=2, label='2-shot'),
         Line2D([0], [0], color=cm.get_cmap('coolwarm')(0.33), lw=2, label='4-shot'),
@@ -390,7 +390,7 @@ def robustness_clip(id=0):
 
 def robustness_dinov2(id=0):
 
-    fig, ax = plt.subplots(figsize=(15, 15))
+    fig, ax = plt.subplots(figsize=(12, 12))
     experiment_name = ["dinov2_soup_imagenet_v3 dinov2_vits14", "dinov2_soup_imagenet_v3 dinov2_vitb14_reg"][id]
     data = pd.read_csv(os.path.join("results", f"{experiment_name.replace(' ', '_').replace('/', '_')}.csv"))
     proto_val_ = []
@@ -538,7 +538,7 @@ def robustness_dinov2(id=0):
     # Define custom legend elements
     custom_lines = [
         Line2D([0], [0], color='gray', marker='o', linestyle='None', markersize=8, label='Individual Adapters'),
-        Line2D([0], [0], color='gray', marker='D', linestyle='None', markersize=10, label='CAT Adapter'),
+        Line2D([0], [0], color='gray', marker='D', linestyle='None', markersize=10, label='Soup Adapter'),
         Line2D([0], [0], color='gray', marker='*', linestyle='None', markersize=14, label='Prototypical'),
         Line2D([0], [0], color='gray', marker='h', linestyle='None', markersize=14, label='KNN'),
         Line2D([0], [0], color=cm.get_cmap('coolwarm')(0.0), lw=2, label='2-shot'),
