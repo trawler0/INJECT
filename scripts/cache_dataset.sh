@@ -1,7 +1,7 @@
 #!/bin/bash
 
 clip_model=$1
-for dataset in "caltech-101" "dtd" "eurosat" "food-101" "oxford_flowers" "oxford_pets" "standford_cars" "ucf101" "fgvc_aircraft" # "sun397"
+for dataset in "caltech-101" "dtd" "eurosat" "food-101" "oxford_flowers" "oxford_pets" "standford_cars" "ucf101" "fgvc_aircraft" "sun397"
 do
   for split in "val" "test";
   do
