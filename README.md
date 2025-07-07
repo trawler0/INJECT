@@ -12,7 +12,7 @@ This project implements **Soup-Adapter**, a method for robust and practical few-
 - **First direct comparison:** This is the first study to apply and compare CLIP adapter-style techniques to both CLIP and DINOv2.
 
 - **Schematic visualization of CLIP-Adapter:**
-- 
+
 ![Alt text](figures/ClipAdapterVisualization_ManimCE_v0.19.0.png)
 - **An ensemble of CLIP-Adapters can be reparameterized to a single one as follows:**
 
