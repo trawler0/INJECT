@@ -1,6 +1,6 @@
 import clip
 from model import Adapter
-from utils import Backbone, CachedDataset, log_metrics, DEFAULT_TRANSFORMS
+from utils import Backbone, CachedDataset, log_metrics, default_transforms
 from pytorch_lightning import Trainer
 import mlflow
 import argparse
@@ -76,7 +76,7 @@ def main():
         model = Adapter(reduction=4, backbone=backbone, text_features=prompts, idxs=idxs, test_flags=test_flags)
 
         train_transforms = T.Compose([
-            DEFAULT_TRANSFORMS,
+            default_transforms(0.5),
             backbone.preprocess
         ])
 
@@ -115,7 +115,7 @@ def main():
         trainer.fit(model, train_loader, val_loader)
 
         if args.return_best:
-            model = CLIPAdapter.load_from_checkpoint(checkpoint_callback.best_model_path, backbone=backbone, text_features=prompts, test_flags=test_flags)
+            model = Adapter.load_from_checkpoint(checkpoint_callback.best_model_path, backbone=backbone, text_features=prompts, test_flags=test_flags)
         # delete best model, no need to save for benchmarking
         if args.return_best and os.path.exists(checkpoint_callback.best_model_path):
             os.remove(checkpoint_callback.best_model_path)

@@ -1,5 +1,5 @@
 from model import Adapter,  BaselineEvaluator
-from utils import Backbone, CachedDataset, log_metrics, DEFAULT_TRANSFORMS
+from utils import Backbone, CachedDataset, log_metrics, default_transforms
 from pytorch_lightning import Trainer
 import mlflow
 import argparse
@@ -66,7 +66,7 @@ def main():
         test_flags = ["val", "imagenet-r", "imagenet-a", "v2", "sketch"] if args.dataset_identifier == "imagenet" else ["val", "test"]
 
         train_transforms = T.Compose([
-            DEFAULT_TRANSFORMS,
+            default_transforms(0.5),
             backbone.preprocess
         ])
 
